@@ -69,24 +69,58 @@ The repository aligns with the strict academic requirements of **"Math MDP $\rig
 ---
 
 ### Environment Setup Instructions
-To set up the workspace and install requirements:
 
-1. **Activate virtual environment & Install dependencies:**
-   Make sure you are in the workspace root:
+To configure the workspace and verify the reinforcement learning simulation environment:
+
+1. **WSL Connection (Optional but Recommended for Windows Users):**
+   * Open the command palette (`Ctrl + Shift + P`) in VS Code.
+   * Select `WSL: Connect to WSL` and open your project directory inside the WSL filesystem.
+
+2. **Install System-Level Compilation and OpenGL Dependencies:**
+   Run the following commands in the WSL/Linux terminal to install packages required for python compilation, rendering, and GLFW window management:
+   ```bash
+   sudo apt update && sudo apt install -y \
+       python3-venv \
+       python3-dev \
+       build-essential \
+       git \
+       cmake \
+       ninja-build \
+       pkg-config \
+       libglfw3 \
+       libglfw3-dev \
+       libgl1-mesa-dev \
+       libegl1-mesa-dev \
+       libxinerama-dev \
+       libxcursor-dev \
+       libxrandr-dev
+   ```
+
+3. **Initialize Local Virtual Environment:**
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
-   python -m pip install -r requirements.txt
    ```
 
-2. **Verify external Unitree MuJoCo dependency:**
-   Ensure the official `unitree_mujoco` package is integrated in the `external/` directory:
+4. **Upgrade Package Managers and Install Requirements:**
+   ```bash
+   python -m pip install --upgrade pip setuptools wheel
+   pip install -r requirements.txt
+   ```
+
+5. **Clone and Integrate External Unitree MuJoCo dependency:**
    ```bash
    git clone https://github.com/unitreerobotics/unitree_mujoco.git external/unitree_mujoco
    ```
 
-3. **Verify env functionality:**
-   Run the environment validation test:
+6. **Verify Library Versions and CUDA Availability:**
+   Check python runtime imports and CUDA hardware support:
+   ```bash
+   python -c "import mujoco, torch, gymnasium; print('MuJoCo Version:', mujoco.__version__); print('PyTorch Version:', torch.__version__); print('CUDA Available:', torch.cuda.is_available()); print('Gymnasium Version:', gymnasium.__version__)"
+   ```
+
+7. **Verify Physics Renderer & GUI Window Viewer:**
+   Verify MuJoCo physics and UI window visualization work correctly by launching the basic test script:
    ```bash
    PYTHONPATH=src python src/test_mujoco_viewer.py
    ```
