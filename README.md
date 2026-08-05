@@ -1,0 +1,128 @@
+# CSCN8020 Final Project: Unitree G1 Three-Digit Hand-Gesture Control via PPO
+## Continuous-Action PPO Controller for humanoid Hand Gesture Modulation
+
+### Student Details
+* **Team Members:** Emmanuel • Liggia • Cemil • Chao
+* **Course:** CSCN8020 - Reinforcement Learning Programming (Final Project)
+* **Instructor:** Prof. Enrique Espinosa
+* **Repository GitHub URL:** https://github.com/caatat741213/Thumbs_Robot.git
+
+---
+
+### Project Description
+This repository contains the complete implementation, verification, and evaluation of a continuous-action Actor-Critic PPO agent designed to control the 3-digit hand (comprising two main fingers and one thumb) of the Unitree G1 humanoid robot in a simulated MuJoCo environment.
+
+The controller solves a multi-task hand-gesture target-conditioned modulation task. Specifically, the agent learns to output joint position increments for the 5-DOF wrist and fingers, steering the hand to achieve three distinct target gestures:
+1. **Thumbs Up**: Thumb extended, wrist rotated upwards, main fingers flexed.
+2. **Open/Stop**: All three digits fully extended, palm facing forward.
+3. **Thumbs Down**: Thumb extended, wrist rotated downwards, main fingers flexed.
+
+The repository aligns with the strict academic requirements of **"Math MDP $\rightarrow$ Algorithm Logic $\rightarrow$ Code Variables $\rightarrow$ Real-time logs"** 4-in-1 alignment mapping.
+
+---
+
+### Environment Setup Instructions
+To set up the workspace and install requirements:
+
+1. **Activate virtual environment & Install dependencies:**
+   Make sure you are in the workspace root:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   python -m pip install -r requirements.txt
+   ```
+
+2. **Verify external Unitree MuJoCo dependency:**
+   Ensure the official `unitree_mujoco` package is integrated in the `external/` directory:
+   ```bash
+   git clone https://github.com/unitreerobotics/unitree_mujoco.git external/unitree_mujoco
+   ```
+
+3. **Verify env functionality:**
+   Run the environment validation test:
+   ```bash
+   PYTHONPATH=src python src/test_mujoco_viewer.py
+   ```
+
+---
+
+### PPO & Environment Implementation Details
+
+The continuous action workspace incorporates the following modules:
+
+1. **G1HandEnv (`g1_hand_env.py`):**
+   * **State Space (32 Dimensions):** Features joint positions, joint velocities, target gesture coordinates, joint target error, one-hot target gesture representation, and the previous step action.
+   * **Action Space (5 Dimensions):** Continuous position target increments ($\Delta \theta_t$) for the wrist joints (roll, pitch, yaw) and fingers (main fingers flex, thumb flex).
+   * **Composite Reward Function:**
+     $$r_t = w_p(e_{t-1} - e_t) - w_h E_{\text{hand}} - w_o E_{\text{orientation}} - w_v \|\dot{q}_t\|^2 - w_a \|a_t\|_2^2 - w_s \|a_t - a_{t-1}\|_2^2 + b_{\text{hold}} I_{\text{hold}} - c_{\text{time}}$$
+     It combines pose error reduction progress, pose/orientation penalties, joint limit penalties, action smoothness penalties, step change smoothness penalties, hold bonus (for sustaining correct gesture for 15+ steps), and a time penalty.
+   * **Success Conditions:** Evaluated via a temporal gesture hold validation loop. Success is declared when joint and wrist errors remain within tolerance for at least 15 steps.
+
+2. **Actor-Critic Network (`actor_critic_network.py`):**
+   * **Actor Network:** MLP with hidden sizes `[128, 128]` predicting the mean vector ($\mu$) and standard deviation ($\sigma$) of the continuous action Gaussian distribution. Action standard deviation is dynamically bounded to prevent exploding policy parameters.
+   * **Critic Network:** MLP with hidden sizes `[128, 128]` outputting the state value estimate $V(s)$.
+
+3. **Rollout Buffer (`rollout_buffer.py`):**
+   * Stores on-policy trajectory batches of size `rollout_length = 2048` transitions.
+   * Computes Generalized Advantage Estimation (GAE) with parameters $\gamma = 0.99$ and $\lambda = 0.95$.
+
+4. **PPO Agent (`agent.py`):**
+   * Manages neural network optimization using clipped surrogate objectives.
+   * Implements clipped value objective and policy entropy regularization for continuous exploration.
+   * Features robust NaN/Inf prevention clipping and gradient norm clipping.
+
+---
+
+### Execution Commands
+
+All scripts should be executed from the repository root with `PYTHONPATH=src`:
+
+* **Module Smoke Test:**
+  Verify buffer collection, Actor-Critic forward propagation, GAE advantage estimation, and update optimization loops:
+  ```bash
+  PYTHONPATH=src python src/Thumbs_Robot/smoke_test.py
+  ```
+
+* **Training PPO policy (Headless):**
+  Train a PPO model with a specific configuration name. Logs and configurations will write to `results/{CONFIG_NAME}`:
+  ```bash
+  # Train Config A (Baseline 100,000 steps)
+  PYTHONPATH=src python src/Thumbs_Robot/train_thumbs.py --results-dir results/ppo_config_a
+  
+  # Train Config A for a quick test (e.g., 2000 steps)
+  PYTHONPATH=src python src/Thumbs_Robot/train_thumbs.py --results-dir results/ppo_config_a --max-total-steps 2000
+  ```
+
+* **Evaluating the Policy:**
+  Run deterministic greedy evaluation over 30 episodes (10 per gesture) to record detailed performance:
+  ```bash
+  PYTHONPATH=src python src/Thumbs_Robot/evaluate_thumbs.py --checkpoint models/ppo_config_a_best.pt --output_dir results/ppo_config_a_evaluation
+  ```
+
+* **Plotting Training Convergence Curves:**
+  Generate separate high-resolution training metric plots (`accumulated_returns.png`, `success_rate.png`, `optimization_losses.png`, `policy_entropy.png`) saved under `results/img/{CONFIG_NAME}/`:
+  ```bash
+  PYTHONPATH=src python src/Thumbs_Robot/plot_results.py --dir results/ppo_config_a --eval_csv results/ppo_config_a_evaluation/eval_results.csv
+  ```
+
+* **Visualizing Gesture Rendering in MuJoCo GUI:**
+  Launch the interactive 3D visualizer to command and render Thumbs Up, Open/Stop, and Thumbs Down gestures sequentially:
+  ```bash
+  PYTHONPATH=src python src/Thumbs_Robot/render_thumbs.py --checkpoint models/ppo_config_a_best.pt
+  ```
+
+---
+
+### Academic Mapping & Core Discussions
+
+1. **3-Digit Morphology Constraints:**
+   The policy is constrained to the Unitree G1 humanoid hand morphology, containing only 1 wrist roll, 1 wrist pitch, 1 wrist yaw, and 2 finger joints (flexors) active per side. 
+
+2. **MDP to Code Mapping Verification:**
+   * **MDP State** $s_t$: Mapped to `obs` array returned by `env._get_obs()`.
+   * **MDP Action** $a_t$: Mapped to `clipped_action` returned by `agent.select_action`.
+   * **PPO Loss** $L_{\text{total}}$: Mapped to variables in `agent.update()` (`actor_loss`, `critic_loss`, `entropy`).
+   * **Console Log Output**: Mapped to output table fields printed in `train_thumbs.py` (`Update`, `Steps`, `Mean_Rwd`, `Succ_%`, `Loss_A`, `Loss_C`).
+
+3. **Generalization across Gestures:**
+   Generalization is achieved by appending the target gesture vector explicitly to the observation space. The network represents a unified, target-conditioned policy mapping joint positions and relative error to the correct target increments.
