@@ -20,6 +20,23 @@ from Thumbs_Robot.rollout_buffer import RolloutBuffer
 from Thumbs_Robot.agent import PPOAgent
 from g1_rl.g1_hand_env import G1HandEnv
 
+# ==============================================================================
+# DEFAULT TRAINING HYPERPARAMETERS (預設訓練超參數配置區)
+# Modify these constants to adjust default training parameters directly.
+# 修改以下常數可直接調整預設的訓練參數。
+# ==============================================================================
+DEFAULT_SEED = 666
+DEFAULT_LR = 3e-4
+DEFAULT_GAMMA = 0.99
+DEFAULT_GAE_LAMBDA = 0.95
+DEFAULT_CLIP_EPSILON = 0.2
+DEFAULT_PPO_EPOCHS = 10
+DEFAULT_BATCH_SIZE = 64
+DEFAULT_ROLLOUT_LENGTH = 2048
+DEFAULT_MAX_TOTAL_STEPS = 100000
+DEFAULT_RESULTS_DIR = "results/ppo_config_a"
+# ==============================================================================
+
 def set_seed(seed: int) -> None:
     """
     Set all random seeds to guarantee 100% reproducibility.
@@ -257,11 +274,13 @@ def run_training(args: argparse.Namespace):
 
         # Save checkpoint periodically
         if (total_steps // args.rollout_length) % 10 == 0 and not args.smoke_test:
-            ckpt_path = os.path.join("models", f"checkpoint_step_{total_steps}.pt")
+            config_name = Path(args.results_dir).name
+            ckpt_path = os.path.join("models", f"{config_name}_checkpoint_{total_steps}.pt")
             agent.save_checkpoint(ckpt_path)
 
     # Save best/final weights
-    final_model_path = os.path.join("models", "best_thumbs_robot.pt")
+    config_name = Path(args.results_dir).name
+    final_model_path = os.path.join("models", f"{config_name}_best.pt")
     agent.save_checkpoint(final_model_path)
     
     # Training completion summary
@@ -287,16 +306,16 @@ def run_training(args: argparse.Namespace):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Headless continuous PPO training runner [Phase 3]")
-    parser.add_argument("--seed", type=int, default=666, help="Random seed for reproducibility")
-    parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
-    parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
-    parser.add_argument("--gae-lambda", type=float, default=0.95, help="GAE lambda coefficient")
-    parser.add_argument("--clip-epsilon", type=float, default=0.2, help="PPO clipping threshold")
-    parser.add_argument("--ppo-epochs", type=int, default=10, help="Updates epochs per rollout")
-    parser.add_argument("--batch-size", type=int, default=64, help="PPO mini-batch size")
-    parser.add_argument("--rollout-length", type=int, default=2048, help="Rollout steps collected per update cycle")
-    parser.add_argument("--max-total-steps", type=int, default=100000, help="Maximum total training environment steps")
-    parser.add_argument("--results-dir", type=str, default="results/ppo_config_a", help="Directory path to save results")
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Random seed for reproducibility")
+    parser.add_argument("--lr", type=float, default=DEFAULT_LR, help="Learning rate")
+    parser.add_argument("--gamma", type=float, default=DEFAULT_GAMMA, help="Discount factor")
+    parser.add_argument("--gae-lambda", type=float, default=DEFAULT_GAE_LAMBDA, help="GAE lambda coefficient")
+    parser.add_argument("--clip-epsilon", type=float, default=DEFAULT_CLIP_EPSILON, help="PPO clipping threshold")
+    parser.add_argument("--ppo-epochs", type=int, default=DEFAULT_PPO_EPOCHS, help="Updates epochs per rollout")
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="PPO mini-batch size")
+    parser.add_argument("--rollout-length", type=int, default=DEFAULT_ROLLOUT_LENGTH, help="Rollout steps collected per update cycle")
+    parser.add_argument("--max-total-steps", type=int, default=DEFAULT_MAX_TOTAL_STEPS, help="Maximum total training environment steps")
+    parser.add_argument("--results-dir", type=str, default=DEFAULT_RESULTS_DIR, help="Directory path to save results")
     parser.add_argument("--cpu", action="store_true", help="Force training on CPU")
     parser.add_argument("--smoke-test", action="store_true", help="Execute rapid smoke test override")
 
