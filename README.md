@@ -135,7 +135,11 @@ The continuous action workspace incorporates the following modules:
    * **State Space (32 Dimensions):** Features joint positions, joint velocities, target gesture coordinates, joint target error, one-hot target gesture representation, and the previous step action.
    * **Action Space (5 Dimensions):** Continuous position target increments ($\Delta \theta_t$) for the wrist joints (roll, pitch, yaw) and fingers (main fingers flex, thumb flex).
    * **Composite Reward Function:**
-$$r_t = w_p(e_{t-1} - e_t) - w_h E_{\text{hand}} - w_o E_{\text{orientation}} - w_v \|\dot{q}_t\|^2 - w_a \|a_t\|_2^2 - w_s \|a_t - a_{t-1}\|_2^2 + b_{\text{hold}} I_{\text{hold}} - c_{\text{time}}$$
+
+$$
+r_t = w_p(e_{t-1} - e_t) - w_h E_{\text{hand}} - w_o E_{\text{orientation}} - w_v \|\dot{q}_t\|^2 - w_a \|a_t\|_2^2 - w_s \|a_t - a_{t-1}\|_2^2 + b_{\text{hold}} I_{\text{hold}} - c_{\text{time}}
+$$
+
      It combines pose error reduction progress, pose/orientation penalties, joint limit penalties, action smoothness penalties, step change smoothness penalties, hold bonus (for sustaining correct gesture for 15+ steps), and a time penalty.
    * **Success Conditions:** Evaluated via a temporal gesture hold validation loop. Success is declared when joint and wrist errors remain within tolerance for at least 15 steps.
 
