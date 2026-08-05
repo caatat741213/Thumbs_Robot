@@ -21,6 +21,53 @@ The repository aligns with the strict academic requirements of **"Math MDP $\rig
 
 ---
 
+### Repository Directory Structure
+
+```text
+.
+├── Thumbs_Robot.ipynb         # Interactive walkthrough notebook in English (cleared and parameterized)
+├── Thumbs_Robot_TW.ipynb      # Interactive walkthrough notebook in Traditional Chinese
+├── test_mujoco_viewer.py      # Basic MuJoCo rendering setup validation script
+├── assets/                    # Simulation scene and meshes for fixed-base Unitree G1 robot
+│   └── g1_fixed_base/
+│       ├── scene_29dof_fixed_base.xml
+│       └── meshes/
+├── doc/                       # Project specifications, plans, and instructions
+│   ├── Final_project_plan.md
+│   ├── David_said.md
+│   ├── Assignment3.md
+│   └── Unitree_MuJoCo_G1_Primer_Workshop.md
+├── models/                    # Saved neural network checkpoints and PPO agent weights (.pt)
+├── results/                   # Training CSV logs and evaluation metrics
+│   ├── ppo_config_a/          # Output folder for Config A logs (step_log, update_log, episode_log)
+│   ├── img/                   # Folder for generated high-resolution convergence plot files
+│   │   └── ppo_config_a/
+│   │       ├── accumulated_returns.png
+│   │       ├── success_rate.png
+│   │       ├── optimization_losses.png
+│   │       └── policy_entropy.png
+│   └── ppo_evaluation/        # Evaluation results and CSV outputs
+├── src/                       # Source code directory
+│   ├── g1_rl/                 # Custom Gymnasium environment classes for G1 robot
+│   │   ├── g1_hand_env.py     # Main 3-digit hand gesture Gymnasium environment wrapper
+│   │   ├── g1_elbow_env.py    # Elbow single-joint environment wrapper (Assignment 3 Baseline)
+│   │   └── g1_model_audit.py  # Model joint audit script
+│   ├── Thumbs_Robot/          # PPO algorithm components and execution runners
+│   │   ├── actor_critic_network.py  # Continuous Gaussian policy Actor-Critic network
+│   │   ├── agent.py                 # PPO agent update and action-selection logic
+│   │   ├── rollout_buffer.py        # Rollout transitions memory and GAE advantage calculator
+│   │   ├── train_thumbs.py          # Continuous PPO training runner
+│   │   ├── evaluate_thumbs.py       # Deterministic multi-gesture policy evaluator
+│   │   ├── render_thumbs.py         # MuJoCo 3D interactive policy visualizer
+│   │   ├── plot_results.py          # High-resolution convergence curves plotter
+│   │   └── smoke_test.py            # Quick execution smoke test runner for PPO components
+│   └── dqn/                   # Assignment 3 DQN single-joint elbow controller codebase
+├── requirements.txt           # Python dependency requirements list
+└── .gitignore                 # Version control exclude patterns
+```
+
+---
+
 ### Environment Setup Instructions
 To set up the workspace and install requirements:
 

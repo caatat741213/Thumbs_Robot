@@ -2,9 +2,16 @@
 __pycache__/
 *.py[cod]
 .vscode/
-external/
-logs/
-results/
-*.csv
 .agents/
-models/
+logs/
+*.csv
+
+# Keep directories in Git but ignore their contents (using .gitkeep)
+/results/*
+!/results/.gitkeep
+
+/models/*
+!/models/.gitkeep
+
+/external/*
+!/external/.gitkeep
