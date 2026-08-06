@@ -8,7 +8,7 @@ class ActorCriticNetwork(nn.Module):
     Continuous Actor-Critic Network (MLP) for G1 continuous motor control.
     Contains separate Actor and Critic heads.
     """
-    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int = 128):
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int = 256, initial_log_std: float = -0.5):
         super(ActorCriticNetwork, self).__init__()
 
         # Actor MLP: predicts mean (mu) of action distribution
@@ -21,8 +21,8 @@ class ActorCriticNetwork(nn.Module):
         self.mu_head = nn.Linear(hidden_dim, action_dim)
         
         # Log standard deviation parameter (std = exp(log_std))
-        # Initialized with a standard value of 0.0 (std = 1.0)
-        self.log_std = nn.Parameter(torch.zeros(action_dim))
+        # Initialized with log_std (default -0.5 -> std = ~0.6)
+        self.log_std = nn.Parameter(torch.ones(action_dim) * initial_log_std)
 
         # Critic MLP: predicts state value V(s)
         self.critic = nn.Sequential(

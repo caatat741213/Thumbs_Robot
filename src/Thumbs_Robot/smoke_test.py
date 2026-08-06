@@ -77,7 +77,7 @@ def run_smoke_test() -> None:
             done = terminated or truncated
             
             # Insert transition into rollout buffer
-            buffer.insert(obs_t, action, reward, done, log_prob, value)
+            buffer.insert(obs_t, action, reward, terminated, truncated, log_prob, value)
             
             print(f"   Step {i+1:02d} | Reward: {reward:.4f} | Done: {done} | Target: {step_info.get('target_gesture')}")
             
@@ -102,7 +102,7 @@ def run_smoke_test() -> None:
         _, _, next_value = agent.select_action(obs_t)
         
         # GAE calculation
-        buffer.compute_advantages(next_value, next_done=done, gamma=0.99, gae_lambda=0.95)
+        buffer.compute_advantages(next_value, next_done=terminated, next_truncated=truncated, gamma=0.99, gae_lambda=0.95)
         print(f"   Calculated advantages shape: {buffer.advantages.shape}")
         assert buffer.advantages.shape[0] == rollout_length, "Advantages dimension mismatch!"
         

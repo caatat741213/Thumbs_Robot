@@ -89,6 +89,8 @@ def run_training(args: argparse.Namespace):
     print(f" - Discount Factor (gamma): {args.gamma}")
     print(f" - GAE Lambda: {args.gae_lambda}")
     print(f" - PPO Clip Epsilon: {args.clip_epsilon}")
+    print(f" - Hidden Layer Dim (hidden_dim): {args.hidden_dim}")
+    print(f" - Initial Log Std (initial_log_std): {args.initial_log_std}")
     print(f" - Batch Size: {args.batch_size}")
     print(f" - Rollout Length: {args.rollout_length}")
     print(f" - Epochs per Rollout: {args.ppo_epochs}")
@@ -104,6 +106,8 @@ def run_training(args: argparse.Namespace):
         ppo_epochs=args.ppo_epochs,
         batch_size=args.batch_size,
         clip_epsilon=args.clip_epsilon,
+        hidden_dim=args.hidden_dim,
+        initial_log_std=args.initial_log_std,
         device=device
     )
 
@@ -123,8 +127,8 @@ def run_training(args: argparse.Namespace):
     episode_writer = csv.writer(episode_log_file)
 
     # Write headers
-    step_writer.writerow(["episode", "step", "gesture", "pose_error", "orientation_error", "reward", "value", "advantage"])
-    update_writer.writerow(["update", "total_steps", "actor_loss", "critic_loss", "entropy", "total_loss", "mean_reward", "success_rate", "completed_episodes"])
+    step_writer.writerow(["episode", "step", "gesture", "pose_error", "orientation_error", "reward", "value", "next_value", "td_target", "advantage", "actor_mean", "actor_std", "action_sample", "action_clipped"])
+    update_writer.writerow(["update", "total_steps", "actor_loss", "critic_loss", "entropy", "total_loss", "clip_fraction", "grad_norm", "explained_variance", "approx_kl", "lr", "mean_reward", "success_rate", "completed_episodes"])
     episode_writer.writerow(["Episode", "Gesture", "Reward", "Success", "Steps", "Final Pose Error", "Hold Duration", "Safety Violation"])
 
     # Flush headers
@@ -155,14 +159,18 @@ def run_training(args: argparse.Namespace):
     while total_steps < max_steps:
         # Collect rollouts
         buffer.clear()
+        last_next_obs_t = obs_t.clone()
         
         # Temp storage for completed episodes metrics inside this rollout
         rollout_completed_rewards = []
         rollout_completed_successes = []
         rollout_last_gesture = "N/A"
         
+        # Temp storage for step records to populate true advantages and bootstrapping later
+        rollout_step_records = []
+        
         for step in range(args.rollout_length):
-            action, log_prob, value = agent.select_action(obs_t)
+            action, log_prob, value, mu, std = agent.select_action(obs_t, return_dist_params=True)
             
             # Step simulation
             action_np = action.numpy()[0] if len(action.shape) > 1 else action.numpy()
@@ -170,22 +178,26 @@ def run_training(args: argparse.Namespace):
             done = terminated or truncated
             
             # Record step metrics
-            buffer.insert(obs_t, action, reward, done, log_prob, value)
+            buffer.insert(obs_t, action, reward, terminated, truncated, log_prob, value)
             
-            # Write to step log
-            step_writer.writerow([
-                episode_count, 
-                episode_length, 
-                step_info.get("target_gesture", "N/A"), 
-                step_info.get("pose_error_norm", 0.0), 
-                step_info.get("orientation_error", 0.0), 
-                reward, 
-                value.item(), 
-                0.0 # Will compute advantage after rollout
-            ])
+            # Buffer step parameters for batched writing after rollout calculation
+            rollout_step_records.append({
+                "episode": episode_count,
+                "step": episode_length,
+                "gesture": step_info.get("target_gesture", "N/A"),
+                "pose_error": step_info.get("pose_error_norm", 0.0),
+                "orientation_error": step_info.get("orientation_error", 0.0),
+                "reward": reward,
+                "value": value.item(),
+                "actor_mean": mu.squeeze().numpy().tolist(),
+                "actor_std": std.squeeze().numpy().tolist(),
+                "action_sample": action.squeeze().numpy().tolist(),
+                "action_clipped": env.last_action.tolist()
+            })
 
             obs = next_obs
             obs_t = torch.tensor(obs)
+            last_next_obs_t = obs_t.clone()
             episode_reward += reward
             episode_length += 1
             total_steps += 1
@@ -215,7 +227,6 @@ def run_training(args: argparse.Namespace):
                 
                 # Flush to avoid data loss on crash
                 episode_log_file.flush()
-                step_log_file.flush()
 
                 # Reset env with deterministic incremented seed
                 episode_count += 1
@@ -228,12 +239,55 @@ def run_training(args: argparse.Namespace):
                     break
 
         # Rollout finished, calculate advantages and update agent
-        if total_steps >= max_steps and done:
-            next_value = torch.zeros(1, device=device) # Terminal end
+        # If the last step in rollout was terminated (success), next value is 0.
+        # Otherwise (truncated or not ended), bootstrap using Critic prediction on the last true observation.
+        if done and terminated:
+            next_value = torch.zeros(1, device=device)
+            next_done_bootstrap = True
+            next_truncated_bootstrap = False
         else:
-            _, _, next_value = agent.select_action(obs_t)
+            with torch.no_grad():
+                next_value = agent.network.get_value(last_next_obs_t.to(device).float())
+            next_done_bootstrap = False
+            next_truncated_bootstrap = truncated
             
-        buffer.compute_advantages(next_value, next_done=done, gamma=args.gamma, gae_lambda=args.gae_lambda)
+        buffer.compute_advantages(
+            next_value, 
+            next_done=next_done_bootstrap, 
+            next_truncated=next_truncated_bootstrap, 
+            gamma=args.gamma, 
+            gae_lambda=args.gae_lambda
+        )
+
+        # Batch write steps log with completed TD targets and advantages
+        for t in range(len(rollout_step_records)):
+            record = rollout_step_records[t]
+            
+            if t == len(rollout_step_records) - 1:
+                next_val = next_value.item()
+            else:
+                next_val = buffer.values[t+1].item()
+                
+            td_tgt = buffer.returns[t].item()
+            adv = buffer.advantages[t].item()
+            
+            step_writer.writerow([
+                record["episode"],
+                record["step"],
+                record["gesture"],
+                record["pose_error"],
+                record["orientation_error"],
+                record["reward"],
+                record["value"],
+                next_val,
+                td_tgt,
+                adv,
+                json.dumps(record["actor_mean"]),
+                json.dumps(record["actor_std"]),
+                json.dumps(record["action_sample"]),
+                json.dumps(record["action_clipped"])
+            ])
+        step_log_file.flush()
 
         # Optimize network weights
         metrics = agent.update(buffer)
@@ -251,6 +305,11 @@ def run_training(args: argparse.Namespace):
             metrics["critic_loss"], 
             metrics["entropy"], 
             metrics["total_loss"],
+            metrics["clip_fraction"],
+            metrics["grad_norm"],
+            metrics["explained_variance"],
+            metrics["approx_kl"],
+            metrics["lr"],
             rollout_mean_reward,
             rollout_success_rate,
             completed_ep
@@ -318,6 +377,8 @@ if __name__ == "__main__":
     parser.add_argument("--results-dir", type=str, default=DEFAULT_RESULTS_DIR, help="Directory path to save results")
     parser.add_argument("--cpu", action="store_true", help="Force training on CPU")
     parser.add_argument("--smoke-test", action="store_true", help="Execute rapid smoke test override")
+    parser.add_argument("--hidden-dim", type=int, default=256, help="Hidden layer dimension of Actor-Critic network")
+    parser.add_argument("--initial-log-std", type=float, default=-0.5, help="Initial log standard deviation for actions")
 
     args = parser.parse_args()
     
