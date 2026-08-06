@@ -1,3 +1,12 @@
+"""
+G1 Hand-Gesture Gymnasium Environment
+Stage: Phase 1 (Environment Setup)
+Primary Function:
+- Defines state space s_t and action space a_t for controlling the wrist and 3-digit fingers of Unitree G1.
+- Implements a composite multi-objective reward function including pose, orientation, smoothness, and hold components.
+- Manages joint limits, gravity compensation, and target gesture check streaks.
+"""
+
 import os
 import sys
 import gymnasium as gym
@@ -7,8 +16,7 @@ import mujoco
 import time
 from typing import Dict, Tuple, Any, Optional
 
-# Ensure src/ is in the PYTHONPATH with high robustness
-# 以高健壯性將 'src' 目錄加入 Python 路徑，確保能獨立執行且順利匯入
+# Ensure src/ is in the PYTHONPATH
 src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if src_dir not in sys.path:
     sys.path.append(src_dir)
@@ -16,12 +24,8 @@ if src_dir not in sys.path:
 class G1HandEnv(gym.Env):
     """
     Gymnasium environment for Unitree G1 3-digit hand-gesture control.
-    Morhology: 2 main fingers (finger_1, finger_2) and 1 thumb.
+    Morphology: 2 main fingers (finger_1, finger_2) and 1 thumb.
     Gestures: Thumbs Up, Open/Stop, Thumbs Down.
-    
-    CSCN8020 三指手勢控制 Gymnasium 環境。
-    控制 G1 左手腕的三個實體旋轉關節，並融合 Thumb、Finger 1、Finger 2 的虛擬手指動力學，
-    共同在連續動作空間內協調做出 Thumbs Up, Open/Stop, Thumbs Down 等目標手勢。
     """
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 50}
 
@@ -58,7 +62,6 @@ class G1HandEnv(gym.Env):
 
         # 1. Load MuJoCo Model & Data
         if not os.path.exists(self.xml_path):
-            # Fallback path if loaded from different working dir
             self.xml_path = os.path.join(src_dir, "..", xml_path)
             if not os.path.exists(self.xml_path):
                 raise FileNotFoundError(f"MuJoCo model not found at: {xml_path}")
@@ -66,7 +69,7 @@ class G1HandEnv(gym.Env):
         self.model = mujoco.MjModel.from_xml_path(self.xml_path)
         self.data = mujoco.MjData(self.model)
 
-        # 2. Setup Controlled Wrist Joints & Actuators
+        # 2. Setup Controlled Wrist Joints & Actuators (Left Wrist pitch, roll, yaw)
         self.wrist_joints = ["left_wrist_roll_joint", "left_wrist_pitch_joint", "left_wrist_yaw_joint"]
         self.wrist_actuators = ["left_wrist_roll", "left_wrist_pitch", "left_wrist_yaw"]
         
@@ -76,7 +79,7 @@ class G1HandEnv(gym.Env):
         self.wrist_qpos_indices = [int(self.model.jnt_qposadr[jid]) for jid in self.wrist_joint_ids]
         self.wrist_qvel_indices = [int(self.model.jnt_dofadr[jid]) for jid in self.wrist_joint_ids]
         
-        # Joint Ranges for Wrist Clipping
+        # Load Joint Ranges for Wrist Hard-Clipping boundary limits
         self.wrist_lows = []
         self.wrist_highs = []
         for jid in self.wrist_joint_ids:
@@ -86,48 +89,42 @@ class G1HandEnv(gym.Env):
         self.wrist_lows = np.array(self.wrist_lows, dtype=np.float32)
         self.wrist_highs = np.array(self.wrist_highs, dtype=np.float32)
 
-        # 3. Setup Joint Actuator Mapping for non-controlled joint holding (shoulder/elbow lock)
+        # 3. Setup Joint Actuator Mapping (for non-controlled shoulder/elbow lock)
         self.joint_actuator_mapping = self._build_joint_actuator_mapping()
 
-        # 4. Observation Space: s_t = [q_t, q_dot_t, q_target, error_t, gesture_one_hot, last_action] (dim=32)
-        # q_t (6d: 3 wrist joints + 3 simulated fingers)
-        # q_dot_t (6d: 3 wrist velocities + 3 simulated finger velocities)
-        # q_target (6d: 3 wrist targets + 3 finger targets)
-        # error_t (6d: targets - current)
-        # one_hot (3d: THUMBS_UP, OPEN_STOP, THUMBS_DOWN)
-        # last_action (5d)
+        # 4. Observation Space (dim=32):
+        # s_t = [q_t (6), q_dot_t (6), q_target (6), error_t (6), gesture_one_hot (3), last_action (5)]
         obs_dim = 32
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
         )
 
         # 5. Continuous Action Space: a_t = [dw_roll, dw_pitch, dw_yaw, d_thumb, d_fingers] (dim=5)
-        # Hand-clipping range is normalized to [-1.0, 1.0]
+        # Action boundaries normalized to [-1.0, 1.0] for optimization stability
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(5,), dtype=np.float32
         )
 
-        # 6. Gesture definitions and target postures
-        # TARGET_VECTORS map: [wrist_roll, wrist_pitch, wrist_yaw, thumb, finger_1, finger_2]
+        # 6. Gesture definitions and target postures [wrist_roll, wrist_pitch, wrist_yaw, thumb, finger_1, finger_2]
         self.gestures = {
             0: "THUMBS_UP",
             1: "OPEN_STOP",
             2: "THUMBS_DOWN"
         }
         self.target_vectors = {
-            0: np.array([1.2, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),   # THUMBS_UP (Thumb extended, fingers flexed, wrist roll oriented up)
-            1: np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0], dtype=np.float32),   # OPEN_STOP (All digits fully extended, palm flat)
-            2: np.array([-1.2, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),  # THUMBS_DOWN (Thumb extended, fingers flexed, wrist roll oriented down)
+            0: np.array([1.2, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),   # THUMBS_UP
+            1: np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0], dtype=np.float32),   # OPEN_STOP
+            2: np.array([-1.2, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),  # THUMBS_DOWN
         }
 
-        # Simulated dynamic states for thumb, finger 1, finger 2 (range [0.0, 1.0])
+        # Simulated dynamic states for the virtual G1 3-digit fingers (scaled [0.0, 1.0])
         self.virtual_qpos = np.zeros(3, dtype=np.float32)
         self.virtual_qvel = np.zeros(3, dtype=np.float32)
         
         self.current_gesture_id = 0
         self.last_action = np.zeros(5, dtype=np.float32)
-        self.controller_target = np.zeros(3, dtype=np.float32) # Target position for wrists
-        self.hold_targets = np.zeros(self.model.nq, dtype=np.float64) # Locking positions for non-wrist joints
+        self.controller_target = np.zeros(3, dtype=np.float32)
+        self.hold_targets = np.zeros(self.model.nq, dtype=np.float64)
         
         self.episode_step = 0
         self.success_streak = 0
@@ -135,12 +132,14 @@ class G1HandEnv(gym.Env):
         self.dt = self.model.opt.timestep * self.frame_skip
 
     def _require_id(self, object_type: mujoco.mjtObj, name: str) -> int:
+        """Helper to safely retrieve MuJoCo ID."""
         object_id = mujoco.mj_name2id(self.model, object_type, name)
         if object_id < 0:
             raise ValueError(f"MuJoCo object was not found: {name}")
         return object_id
 
     def _build_joint_actuator_mapping(self) -> list[tuple[int, int, int]]:
+        """Maps actuator IDs to corresponding joint positions and velocities."""
         mapping = []
         for actuator_id in range(self.model.nu):
             joint_id = int(self.model.actuator_trnid[actuator_id, 0])
@@ -153,38 +152,38 @@ class G1HandEnv(gym.Env):
 
     @staticmethod
     def _calculate_pd_torque(target_angle: float, current_angle: float, current_velocity: float, kp: float, kd: float) -> float:
+        """Computes Proportional-Derivative (PD) torque feedback command."""
         return kp * (target_angle - current_angle) - kd * current_velocity
 
     def _get_observation(self) -> np.ndarray:
-        # Retrieve physical states for wrist joints
+        """Retrieves physical states and builds observation vector s_t."""
         q_wrist = np.array([self.data.qpos[idx] for idx in self.wrist_qpos_indices], dtype=np.float32)
         v_wrist = np.array([self.data.qvel[idx] for idx in self.wrist_qvel_indices], dtype=np.float32)
 
-        # Full current posture and velocity vector (physical wrists + simulated fingers)
+        # Full posture vector including simulated virtual fingers
         q_t = np.concatenate([q_wrist, self.virtual_qpos])
         v_t = np.concatenate([v_wrist, self.virtual_qvel])
 
-        # Target and error vectors
+        # Current target and error vectors
         q_target = self.target_vectors[self.current_gesture_id]
         error_t = q_target - q_t
 
-        # One-hot encoding of target gesture
+        # Target gesture ID represented as a 3-dim one-hot vector
         one_hot = np.zeros(3, dtype=np.float32)
         one_hot[self.current_gesture_id] = 1.0
 
-        # Construct full 32-dim observation:
-        # q_t(6) + v_t(6) + q_target(6) + error_t(6) + one_hot(3) + last_action(5) = 32
+        # Construct observation: q_t(6) + v_t(6) + q_target(6) + error_t(6) + one_hot(3) + last_action(5) = 32
         obs = np.concatenate([q_t, v_t, q_target, error_t, one_hot, self.last_action])
         return obs.astype(np.float32)
 
     def _get_info(self) -> Dict[str, Any]:
-        # Compute individual posture and orientation errors
+        """Calculates hand-pose and orientation errors for stats."""
         q_wrist = np.array([self.data.qpos[idx] for idx in self.wrist_qpos_indices], dtype=np.float32)
         q_target = self.target_vectors[self.current_gesture_id]
         
-        # Hand-pose error: thumb and primary fingers
+        # Norm error for the virtual fingers
         pose_error_norm = float(np.linalg.norm(self.virtual_qpos - q_target[3:]))
-        # Wrist/Palm orientation error
+        # Norm error for the wrist orientation
         orientation_error = float(np.linalg.norm(q_wrist - q_target[:3]))
 
         return {
@@ -196,6 +195,7 @@ class G1HandEnv(gym.Env):
         }
 
     def _apply_controller(self) -> None:
+        """Applies torque commands combining PD feedback with Coriolis/gravity compensation."""
         for actuator_id, qpos_index, qvel_index in self.joint_actuator_mapping:
             current_position = float(self.data.qpos[qpos_index])
             current_velocity = float(self.data.qvel[qvel_index])
@@ -221,16 +221,15 @@ class G1HandEnv(gym.Env):
             self.data.ctrl[actuator_id] = np.clip(commanded_torque, control_low, control_high)
 
     def reset(self, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Resets the environment, physical states, and samples new target gesture."""
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
 
-        # Clear physical vectors
         self.data.qpos[:] = 0.0
         self.data.qvel[:] = 0.0
         self.data.ctrl[:] = 0.0
 
         # Scripted arm presentation posture (shoulder and elbow held stable to showcase gestures)
-        # We find IDs dynamically and preset their qpos values
         pres_joints = {
             "left_shoulder_pitch_joint": -0.5,
             "left_shoulder_roll_joint": 0.4,
@@ -249,7 +248,7 @@ class G1HandEnv(gym.Env):
         mujoco.mj_forward(self.model, self.data)
         self.hold_targets = self.data.qpos.copy()
 
-        # 1. Target gesture configuration selection
+        # Configure target gesture configuration selection
         if options is not None and "gesture_id" in options:
             self.current_gesture_id = int(options["gesture_id"])
         elif options is not None and "target_gesture" in options:
@@ -263,10 +262,10 @@ class G1HandEnv(gym.Env):
         else:
             self.current_gesture_id = self.np_random.choice(list(self.gestures.keys()))
 
-        # 2. Reset controller targets to match initial physical positions
+        # Reset controller targets to match initial physical positions
         self.controller_target = np.array([self.data.qpos[idx] for idx in self.wrist_qpos_indices], dtype=np.float32)
 
-        # 3. Initialize simulated dynamic fingers with minor randomized noise for exploration
+        # Initialize simulated dynamic fingers with minor randomized noise for exploration
         self.virtual_qpos = self.np_random.uniform(0.1, 0.9, size=3).astype(np.float32)
         self.virtual_qvel.fill(0.0)
 
@@ -283,7 +282,7 @@ class G1HandEnv(gym.Env):
         return observation, info
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-        # Check action vector shape
+        """Applies action steps, runs simulation, checks termination, and returns reward."""
         if action.shape[0] != 5:
             raise ValueError(f"Action dimension must be 5, but got {action.shape[0]}")
 
@@ -291,17 +290,17 @@ class G1HandEnv(gym.Env):
         clipped_action = np.clip(action, self.action_space.low, self.action_space.high)
         self.last_action = clipped_action.copy()
 
-        # 1. Apply Continuous Increments to Wrists Controller Target
+        # Apply Continuous Increments to Wrists Controller Target
         self.controller_target = np.clip(
             self.controller_target + clipped_action[:3] * self.action_increment,
             self.wrist_lows,
             self.wrist_highs
         )
 
-        # 2. Step simulated finger dynamics
+        # Step simulated finger dynamics
         prev_virtual_qpos = self.virtual_qpos.copy()
         
-        # action[3] -> thumb, action[4] -> fingers (食/中指共用)
+        # action[3] -> thumb, action[4] -> fingers (index and middle shared)
         self.virtual_qpos[0] = np.clip(self.virtual_qpos[0] + clipped_action[3] * self.finger_increment, 0.0, 1.0)
         self.virtual_qpos[1] = np.clip(self.virtual_qpos[1] + clipped_action[4] * self.finger_increment, 0.0, 1.0)
         self.virtual_qpos[2] = np.clip(self.virtual_qpos[2] + clipped_action[4] * self.finger_increment, 0.0, 1.0)
@@ -309,14 +308,14 @@ class G1HandEnv(gym.Env):
         # Calculate simulated finger velocity
         self.virtual_qvel = (self.virtual_qpos - prev_virtual_qpos) / self.dt
 
-        # 3. Step MuJoCo simulator
+        # Step MuJoCo simulator physics
         for _ in range(self.frame_skip):
             self._apply_controller()
             mujoco.mj_step(self.model, self.data)
 
         self.episode_step += 1
 
-        # 4. Check Hold Success and Termination Criteria
+        # Check Hold Success and Termination Criteria
         info = self._get_info()
         pose_error = info["pose_error_norm"]
         orient_error = info["orientation_error"]
@@ -327,13 +326,14 @@ class G1HandEnv(gym.Env):
         else:
             self.success_streak = 0
 
+        # Terminated when target holds consecutively, truncated at max steps limit
         terminated = self.success_streak >= self.required_success_steps
         truncated = self.episode_step >= self.maximum_episode_steps
 
-        # 5. Compute Reward components
+        # Compute Reward components
         reward, reward_info = self.compute_reward(clipped_action, pose_error, orient_error)
         
-        # Inject terminal bonuses or overrides
+        # Success bonus injection
         if terminated:
             reward += 10.0
             reward_info["success_bonus"] = 10.0
@@ -348,7 +348,8 @@ class G1HandEnv(gym.Env):
         return observation, float(reward), terminated, truncated, info
 
     def compute_reward(self, action: np.ndarray, pose_error: float, orientation_error: float) -> Tuple[float, Dict[str, float]]:
-        # Multi-objective reward component weights
+        """Computes multi-objective reward combining errors, smooth penalties, and bonuses."""
+        # Weights for multi-objective optimization components
         w_progress = 1.5
         w_hand = 2.0
         w_orient = 1.0
@@ -358,16 +359,16 @@ class G1HandEnv(gym.Env):
         b_hold = 0.5
         c_time = 0.1
 
-        # Compute reward components: closer is better
-        r_progress = 0.0 # progress reward can be added during trajectory transitions
+        # Progress reward can be added during trajectory transitions
+        r_progress = 0.0 
         r_hand = -pose_error
         r_orient = -orientation_error
         r_smooth = -float(np.sum(np.square(action)))
         
-        # Smoothness delta penalizes change in action command to avoid jitter
+        # Smoothness delta penalizes change in action command to avoid jittering
         r_smooth_delta = -float(np.sum(np.square(action - self.last_action)))
         
-        # Joint limit penalty: penalize approaching wrist limits
+        # Joint limit penalty: penalize approaching wrist physical limits
         q_wrist = np.array([self.data.qpos[idx] for idx in self.wrist_qpos_indices])
         limit_violations = 0.0
         for i, val in enumerate(q_wrist):
@@ -409,6 +410,7 @@ class G1HandEnv(gym.Env):
         return total_reward, reward_info
 
     def render(self):
+        """Launches passive viewer or syncs rendering steps."""
         if self.render_mode != "human":
             return
 
@@ -419,10 +421,10 @@ class G1HandEnv(gym.Env):
             return
 
         self.viewer.sync()
-        # Mimic render interval frame rate
         time.sleep(1.0 / self.metadata["render_fps"])
 
     def close(self):
+        """Safely closes passive viewer resources."""
         if self.viewer is not None:
             self.viewer.close()
             self.viewer = None

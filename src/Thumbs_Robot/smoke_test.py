@@ -1,3 +1,13 @@
+"""
+PPO Module Smoke Tester
+Stage: Phase 3 (PPO Component Verification)
+Primary Function:
+- Performs rapid integration tests on PPO agent modules.
+- Verifies Gymnasium environment loading in headless mode.
+- Evaluates transition storage insertions, value predictions, and GAE computations.
+- Tests optimization update cycles and checkpoint file operations (save/load).
+"""
+
 import sys
 import os
 from pathlib import Path
@@ -5,7 +15,6 @@ import numpy as np
 import torch
 
 # Add 'src' directory to Python path for importing modules
-# 將 'src' 目錄加入 Python 路徑，以匯入相關模組
 current_dir = Path(__file__).resolve().parent
 src_dir = current_dir.parent
 if str(src_dir) not in sys.path:
@@ -21,12 +30,10 @@ def run_smoke_test() -> None:
     print("Starting PPO Module Smoke Test...")
     print("==================================================")
 
-    # 1. Environment initialization / 初始化真實 Gym 環境
+    # 1. Environment initialization (headless mode)
     print("\n[Step 1] Initializing G1HandEnv in headless mode...")
     xml_path = os.path.join("assets", "g1_fixed_base", "scene_29dof_fixed_base.xml")
     if not os.path.exists(xml_path):
-        # Fallback to absolute path or other locations if needed, but relative to repo root is standard
-        print(f"   Warning: Model XML not found at {xml_path}. Trying fallback...")
         xml_path = "assets/g1_fixed_base/scene_29dof_fixed_base.xml"
         
     try:
@@ -40,7 +47,7 @@ def run_smoke_test() -> None:
         print(f"   Failed to load G1HandEnv: {e}")
         sys.exit(1)
 
-    # 2. Agent & Network Initialization / 初始化代理人與網路
+    # 2. Agent & Network Initialization
     print("\n[Step 2] Initializing PPOAgent with test hyperparameters...")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     try:
@@ -58,7 +65,7 @@ def run_smoke_test() -> None:
         env.close()
         sys.exit(1)
 
-    # 3. Rollout Buffer and Real Episode Step Collection / 真實步進與 Rollout 緩衝區收集
+    # 3. Rollout Buffer and Real Episode Step Collection
     rollout_length = 5
     print(f"\n[Step 3] Running episode to collect {rollout_length} steps of transitions...")
     buffer = RolloutBuffer(rollout_length, state_dim, action_dim, device=device)
@@ -68,10 +75,10 @@ def run_smoke_test() -> None:
         obs_t = torch.tensor(obs)
         
         for i in range(rollout_length):
-            # Select action using agent
+            # Select exploration action using network
             action, log_prob, value = agent.select_action(obs_t)
             
-            # Step simulation
+            # Step the simulation step forward
             action_np = action.numpy()[0] if len(action.shape) > 1 else action.numpy()
             next_obs, reward, terminated, truncated, step_info = env.step(action_np)
             done = terminated or truncated
@@ -95,18 +102,18 @@ def run_smoke_test() -> None:
         env.close()
         sys.exit(1)
 
-    # 4. GAE Advantages and PPO Optimization / 優勢計算與網路最佳化
+    # 4. GAE Advantages and PPO Optimization
     print("\n[Step 4] Computing GAE advantages and executing PPO agent update...")
     try:
-        # Predict value of the final next state for bootstrapping
+        # Predict value of the final next state for bootstrap estimation
         _, _, next_value = agent.select_action(obs_t)
         
-        # GAE calculation
+        # Calculate GAE advantages
         buffer.compute_advantages(next_value, next_done=terminated, next_truncated=truncated, gamma=0.99, gae_lambda=0.95)
         print(f"   Calculated advantages shape: {buffer.advantages.shape}")
         assert buffer.advantages.shape[0] == rollout_length, "Advantages dimension mismatch!"
         
-        # Optimize networks
+        # Run weights optimization update
         metrics = agent.update(buffer)
         print("   Optimization complete. Computed Metrics:")
         for k, v in metrics.items():
@@ -119,19 +126,19 @@ def run_smoke_test() -> None:
         env.close()
         sys.exit(1)
 
-    # 5. Checkpoint saving and loading / 檢查點儲存與載入
+    # 5. Checkpoint saving and loading
     print("\n[Step 5] Testing model save and load checkpoint...")
     checkpoint_dir = Path("models")
     checkpoint_dir.mkdir(exist_ok=True)
     test_checkpoint = checkpoint_dir / "test_smoke_ppo_checkpoint.pt"
     
     try:
-        # Save model checkpoint
+        # Save model parameters
         agent.save_checkpoint(test_checkpoint)
         print(f"   Checkpoint saved to: {test_checkpoint}")
         assert test_checkpoint.exists(), "Checkpoint file was not created!"
         
-        # Load model checkpoint into a new clean agent
+        # Load parameters back into clean agent instance
         new_agent = PPOAgent(
             state_dim=state_dim,
             action_dim=action_dim,
@@ -140,7 +147,7 @@ def run_smoke_test() -> None:
         new_agent.load_checkpoint(test_checkpoint)
         print("   Checkpoint loaded into a new PPO agent successfully.")
         
-        # Clean up temporary test checkpoint file
+        # Remove temporary checkpoint file
         if test_checkpoint.exists():
             test_checkpoint.unlink()
             print("   Temporary checkpoint file deleted.")
@@ -152,7 +159,6 @@ def run_smoke_test() -> None:
         env.close()
         sys.exit(1)
 
-    # Close MuJoCo environment / 關閉環境
     env.close()
     
     print("\n==================================================")

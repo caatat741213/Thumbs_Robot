@@ -1,10 +1,10 @@
 """
-Plotting Script for Thumbs Robot PPO training and evaluation results.
-This script reads the CSV logs (update_log.csv, episode_log.csv, and eval_results.csv)
-and generates high-resolution comparative and summary plots.
-
-CSCN8020 PPO 訓練與評估結果繪圖與對照腳本。
-讀取 PPO 訓練日誌與評估結果 CSV，繪製高解析度訓練指標看板與基準手勢評估比較圖表。
+PPO Training & Evaluation Plotter
+Stage: Phase 6 (Data Visualization)
+Primary Function:
+- Reads training CSV logs (update_log.csv, episode_log.csv, eval_results.csv).
+- Generates high-resolution performance plots for Returns, success rates, losses, and entropy.
+- Creates comparative ablation bar charts and success rate lines across different training configurations.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Apply clean and professional styling
-# 嘗試載入現代化繪圖風格
 try:
     plt.style.use("seaborn-v0_8-whitegrid")
 except:
@@ -30,7 +29,6 @@ except:
 def read_eval_results(csv_path: Path) -> dict[str, list] | None:
     """
     Read detailed evaluation CSV log and extract episode-level results.
-    讀取詳細的評估 CSV 日誌並解析 Episode 級別的指標數據。
     """
     if not csv_path.exists():
         print(f"Warning: Evaluation CSV not found at {csv_path}")
@@ -73,7 +71,6 @@ def read_eval_results(csv_path: Path) -> dict[str, list] | None:
 def moving_average(data: np.ndarray, window: int) -> np.ndarray:
     """
     Calculate moving average with padding protection.
-    計算移動平均值，具備長度保護。
     """
     if len(data) == 0:
         return np.array([])
@@ -83,7 +80,6 @@ def moving_average(data: np.ndarray, window: int) -> np.ndarray:
 def plot_single_run_metrics(results_dir: Path) -> None:
     """
     Generate and save separate high-resolution training performance plots for a single configuration.
-    為單一配置生成並儲存獨立的高解析度訓練效能圖表。
     """
     update_log_path = results_dir / "update_log.csv"
     episode_log_path = results_dir / "episode_log.csv"
@@ -109,7 +105,7 @@ def plot_single_run_metrics(results_dir: Path) -> None:
 
     title_suffix = f" ({results_dir.name.upper()})"
 
-    # 1. Plot 1: Episode Accumulated Returns (EMA smoothed)
+    # 1. Plot 1: Episode Accumulated Returns (smoothed with EMA)
     plt.figure(figsize=(8, 5))
     plt.plot(episode_df["Reward"], alpha=0.25, color=c_blue, label="Raw Return")
     plt.plot(episode_df["Reward"].ewm(span=30, adjust=False).mean(), color=c_darkblue, linewidth=2.5, label="EMA (span=30)")
@@ -140,7 +136,7 @@ def plot_single_run_metrics(results_dir: Path) -> None:
     plt.close()
     print(f"Generated plot saved to: {output_path2}")
 
-    # 3. Plot 3: Optimization Losses
+    # 3. Plot 3: Optimization Losses (Actor policy loss and Critic value loss)
     plt.figure(figsize=(8, 5))
     plt.plot(update_df["actor_loss"], color=c_red, alpha=0.8, label="Actor Loss")
     plt.plot(update_df["critic_loss"], color=c_orange, alpha=0.8, label="Critic Loss")
@@ -173,13 +169,12 @@ def plot_single_run_metrics(results_dir: Path) -> None:
 def plot_eval_performance(eval_csv: Path, output_dir: Path) -> None:
     """
     Generate a bar chart visualization of PPO deterministic evaluation results per target gesture.
-    產出 PPO 確定性評估結果的柱狀圖（按手勢類別區分）。
     """
     data = read_eval_results(eval_csv)
     if data is None:
         return
 
-    # Group and compute metrics per gesture
+    # Group and compute average metrics per gesture
     df = pd.DataFrame(data)
     grouped = df.groupby("Gesture").agg({
         "Success": "mean",
@@ -193,10 +188,9 @@ def plot_eval_performance(eval_csv: Path, output_dir: Path) -> None:
     x = np.arange(len(gestures))
     width = 0.35
 
-    # 1. Plot Success Rate & Pose Error breakdown
+    # Plot Success Rate & Pose Error breakdown side-by-side
     fig, ax1 = plt.subplots(figsize=(10, 6))
     
-    # Custom professional colors
     color_succ = "#2ca02c" # Green
     color_err = "#d62728" # Red
     
@@ -210,7 +204,7 @@ def plot_eval_performance(eval_csv: Path, output_dir: Path) -> None:
     ax2.set_ylabel("Average Pose Error (rad)", color=color_err, fontsize=12, fontweight="bold")
     ax2.tick_params(axis="y", labelcolor=color_err)
     
-    # Add values on top of success bars
+    # Annotate success values above success rate bars
     for rect in rects1:
         height = rect.get_height()
         ax1.annotate(
@@ -221,7 +215,7 @@ def plot_eval_performance(eval_csv: Path, output_dir: Path) -> None:
             ha="center", va="bottom", fontsize=10, fontweight="bold"
         )
         
-    # Add values on top of error bars
+    # Annotate error values above pose error bars
     for rect in rects2:
         height = rect.get_height()
         ax2.annotate(
@@ -247,7 +241,6 @@ def plot_eval_performance(eval_csv: Path, output_dir: Path) -> None:
 def plot_comparative_metrics(compare_dirs: list[str], output_dir: Path) -> None:
     """
     Generate comparative curves across multiple PPO training runs.
-    在多個 PPO 訓練運行目錄之間生成比較曲線圖表。
     """
     plt.figure(figsize=(11, 6.5))
     
@@ -260,7 +253,7 @@ def plot_comparative_metrics(compare_dirs: list[str], output_dir: Path) -> None:
         
         if ep_log.exists():
             df = pd.read_csv(ep_log)
-            # Plot moving average of successes
+            # Plot moving average of success rates across episodes
             rolling_success = df["Success"].rolling(window=30, min_periods=1).mean() * 100.0
             plt.plot(rolling_success, color=colors[idx % len(colors)], linewidth=2.5, label=f"{d_path.name.upper()}")
             has_data = True
@@ -306,15 +299,15 @@ def main() -> None:
     results_dir = Path(args.dir)
     eval_csv = Path(args.eval_csv)
     
-    # 1. Plot Single Dashboard / 繪製單一結果看板
+    # 1. Plot Single Dashboard
     if results_dir.exists():
         plot_single_run_metrics(results_dir)
         
-    # 2. Plot Eval breakdown / 繪製評估分析柱狀圖
+    # 2. Plot Eval breakdown
     if eval_csv.exists():
         plot_eval_performance(eval_csv, eval_csv.parent)
         
-    # 3. Plot Comparison Dashboard / 繪製多組實驗比較圖
+    # 3. Plot Comparison Dashboard
     if args.compare:
         compare_out = Path("results/plots")
         compare_out.mkdir(parents=True, exist_ok=True)

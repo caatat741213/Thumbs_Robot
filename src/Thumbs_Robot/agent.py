@@ -1,3 +1,13 @@
+"""
+PPO Agent Controller
+Stage: Phase 2 (PPO Agent Design)
+Primary Function:
+- Orchestrates Actor-Critic networks for continuous control action sampling.
+- Implements PPO Clipped Surrogate Loss and Critic value MSE loss during learning cycles.
+- Manages parameter updates with gradient norm clipping and Adam optimization.
+- Handles model checkpoints serialization (save/load).
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -37,6 +47,7 @@ class PPOAgent:
         self.max_grad_norm = max_grad_norm
         self.device = device
 
+        # Initialize Actor-Critic networks
         self.network = ActorCriticNetwork(
             state_dim=state_dim,
             action_dim=action_dim,
@@ -58,10 +69,13 @@ class PPOAgent:
         with torch.no_grad():
             dist, value = self.network(state_t)
             if deterministic:
+                # Greedy choice: mean of Gaussian distribution
                 action = dist.mean
             else:
+                # Stochastic exploration: sample from Gaussian distribution
                 action = dist.sample()
             
+            # Log probability of the sampled action across dimensions
             log_prob = dist.log_prob(action).sum(axis=-1)
             
         if return_dist_params:
@@ -108,7 +122,7 @@ class PPOAgent:
                 new_values = new_values.view(-1)
                 returns = returns.view(-1)
 
-                # 1. Policy Ratio
+                # 1. Policy Ratio: rho = exp(new_log_probs - old_log_probs)
                 ratio = torch.exp(new_log_probs - old_log_probs)
 
                 # Calculate approximate KL divergence for diagnostics
@@ -116,28 +130,29 @@ class PPOAgent:
                     log_ratio = new_log_probs - old_log_probs
                     approx_kl = ((torch.exp(log_ratio) - 1.0) - log_ratio).mean().item()
 
-                # 2. Clipped Actor Loss
+                # 2. Clipped Actor Loss (Clipped Surrogate Objective)
                 surr1 = ratio * advantages
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_epsilon, 1.0 + self.clip_epsilon) * advantages
                 actor_loss = -torch.min(surr1, surr2).mean()
 
-                # Calculate clip fraction
+                # Calculate clip fraction metrics
                 with torch.no_grad():
                     clipped = (ratio < 1.0 - self.clip_epsilon) | (ratio > 1.0 + self.clip_epsilon)
                     clip_fraction = clipped.float().mean().item()
 
-                # 3. Critic Loss (MSE)
+                # 3. Critic Loss (Mean Squared Error: MSE)
                 critic_loss = 0.5 * nn.functional.mse_loss(new_values, returns)
 
                 # 4. Entropy regularizer (exploration bonus)
                 entropy_loss = -entropy.mean()
 
-                # Total Loss computation
+                # Total Loss computation: L = L_actor + c1 * L_critic - c2 * H
                 loss = actor_loss + self.value_coef * critic_loss + self.entropy_coef * entropy_loss
 
                 # Gradient descent step
                 self.optimizer.zero_grad()
                 loss.backward()
+                # Apply L2 gradient norm clipping to prevent gradient explosion
                 grad_norm = nn.utils.clip_grad_norm_(self.network.parameters(), self.max_grad_norm)
                 self.optimizer.step()
 

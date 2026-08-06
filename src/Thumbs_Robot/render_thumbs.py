@@ -1,3 +1,13 @@
+"""
+PPO Policy 3D Visualizer
+Stage: Phase 6 (3D Rendering Visualization)
+Primary Function:
+- Loads the trained continuous PPO controller weights.
+- Initializes G1 environment with human rendering enabled.
+- Runs simulation steps interactively for benchmark target gestures.
+- Prompts user in CLI for video recordings.
+"""
+
 import os
 import sys
 import argparse
@@ -7,7 +17,6 @@ import torch
 import numpy as np
 
 # Ensure src/ is in the PYTHONPATH with high robustness
-# 以高健壯性將 'src' 目錄加入 Python 路徑，確保能獨立執行且順利匯入
 src_dir = Path(__file__).resolve().parent.parent
 if str(src_dir) not in sys.path:
     sys.path.append(str(src_dir))
@@ -32,7 +41,6 @@ def render_policy(checkpoint_path: str):
     Launch interactive 3D simulation visualization.
     Loads the trained continuous PPO controller and commands
     gestures (Thumbs Up, Open/Stop, Thumbs Down) sequentially with recording prompts.
-    啟動互動式 3D 模擬視覺化。載入訓練好的連續 PPO 控制器，並順序演示三種手勢（Thumbs Up, Open/Stop, Thumbs Down），同時提供錄影提示。
     """
     print("========================================")
     print("Launching MuJoCo 3D Visualizer Renderer")
@@ -48,7 +56,6 @@ def render_policy(checkpoint_path: str):
             chk_path = alt_path
 
     # 2. Environment initialization in Human Render mode
-    # 對齊訓練使用的場景 XML，確保模型 morphology 正確（三指形態）
     xml_path = os.path.join("assets", "g1_fixed_base", "scene_29dof_fixed_base.xml")
     if not os.path.exists(xml_path):
         xml_path = "assets/g1_fixed_base/scene_29dof_fixed_base.xml"
@@ -74,8 +81,7 @@ def render_policy(checkpoint_path: str):
 
     set_seed(666)
 
-    # Define the target gestures to render sequentially
-    # 依序展示三種標準手勢：Thumbs Up, Open/Stop, Thumbs Down
+    # Define the target gestures to render sequentially: Thumbs Up, Open/Stop, Thumbs Down
     benchmark_gestures = [0, 1, 2]
     total_gestures = len(benchmark_gestures)
 
@@ -87,7 +93,7 @@ def render_policy(checkpoint_path: str):
             # Reset environment and specify gesture via option
             obs, info = env.reset(seed=1000 + gid, options={"gesture_id": gid})
             
-            # Interactive prompts for recording / 互動式錄影引導提示
+            # Interactive prompts for recording
             if idx == 1:
                 print("\n" + "=" * 60)
                 print("MuJoCo GUI window is now open.")
@@ -115,7 +121,7 @@ def render_policy(checkpoint_path: str):
                 # Deterministic greedy policy execution
                 action, _, _ = agent.select_action(torch.tensor(obs), deterministic=True)
                 
-                # Step simulation
+                # Step the simulation step forward
                 action_np = action.numpy()[0] if len(action.shape) > 1 else action.numpy()
                 next_obs, reward, terminated, truncated, step_info = env.step(action_np)
                 done = terminated or truncated
@@ -126,7 +132,7 @@ def render_policy(checkpoint_path: str):
                 pose_err = step_info.get("pose_error_norm", 0.0)
                 orient_err = step_info.get("orientation_error", 0.0)
                 
-                # Real-time console print for steps / 即時列印步進狀態
+                # Real-time console print for steps (every 10 steps or done)
                 if step_count % 10 == 0 or done:
                     print(
                         f"{idx:<6d} | "
@@ -149,8 +155,7 @@ def render_policy(checkpoint_path: str):
 
         print("All benchmark gestures rendered successfully!")
         
-        # Keep window open until user closes it / 等待用戶手動關閉視窗後才結束
-        # This checks if the passive viewer is active in Gymnasium environment
+        # Keep window open until user closes it
         if hasattr(env, "viewer") and env.viewer is not None:
             print("Close the MuJoCo viewer window to exit.")
             while env.viewer is not None and env.viewer.is_running():

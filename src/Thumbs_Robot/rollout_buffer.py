@@ -1,3 +1,13 @@
+"""
+PPO Rollout Buffer
+Stage: Phase 2 (PPO Rollout Buffer)
+Primary Function:
+- Allocates fixed GPU/CPU memory tensors to store on-policy trajectory transitions.
+- Computes Generalized Advantage Estimation (GAE) to evaluate advantage signals.
+- Handles target bootstrapping on terminal boundaries (distinguishing terminations vs. truncations).
+- Prepares randomized mini-batch generators for training epoch iterations.
+"""
+
 import torch
 from typing import Dict, Tuple, List, Generator
 
@@ -10,6 +20,7 @@ class RolloutBuffer:
         self.size = size
         self.device = device
 
+        # Pre-allocate tensor memory for optimization metrics
         self.states = torch.zeros((size, state_dim), dtype=torch.float32, device=device)
         self.actions = torch.zeros((size, action_dim), dtype=torch.float32, device=device)
         self.rewards = torch.zeros(size, dtype=torch.float32, device=device)
@@ -31,6 +42,7 @@ class RolloutBuffer:
         if self.ptr >= self.size:
             raise IndexError("RolloutBuffer is full, call compute_advantages and clear before insertion.")
         
+        # Save transition parameters
         self.states[self.ptr] = state.detach()
         self.actions[self.ptr] = action.detach()
         self.rewards[self.ptr] = torch.tensor(reward, device=self.device)
@@ -58,6 +70,7 @@ class RolloutBuffer:
         next_done = float(next_done) # Representing terminated
         next_truncated = float(next_truncated) # Representing truncated
 
+        # Traverse backwards to propagate GAE advantages
         for t in reversed(range(self.size)):
             if t == self.size - 1:
                 next_val = next_value
@@ -71,6 +84,7 @@ class RolloutBuffer:
                 non_terminal = 1.0 - self.dones[t + 1].item()
                 episode_continue = 1.0 - float(self.dones[t + 1].item() or self.truncates[t + 1].item())
 
+            # GAE formula implementation
             delta = self.rewards[t].item() + gamma * non_terminal * next_val - self.values[t].item()
             last_gae = delta + gamma * gae_lambda * episode_continue * last_gae
             self.advantages[t] = last_gae
@@ -78,13 +92,14 @@ class RolloutBuffer:
         # TD Targets (Returns) = Advantage + Value
         self.returns = self.advantages + self.values
 
-        # Rollout level standardization
+        # Rollout level advantage standardization for training variance reduction
         self.advantages = (self.advantages - self.advantages.mean()) / (self.advantages.std() + 1e-8)
 
     def get_generator(self, batch_size: int) -> Generator[Dict[str, torch.Tensor], None, None]:
         """
         Generator yielding mini-batches for PPO updates.
         """
+        # Shuffle transition indices randomly
         indices = torch.randperm(self.size, device=self.device)
         for start in range(0, self.size, batch_size):
             batch_idx = indices[start : start + batch_size]

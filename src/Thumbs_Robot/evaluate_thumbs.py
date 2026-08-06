@@ -1,3 +1,13 @@
+"""
+PPO Policy Evaluator
+Stage: Phase 6 (Evaluation Dashboard)
+Primary Function:
+- Loads the PPOAgent model weights checkpoint.
+- Runs deterministic policy runs (zero exploration variance, dist.mean actions).
+- Collects stats across benchmark target gestures (success rate, steps, pose & orient errors).
+- Serializes detailed run metrics to evaluation CSV logs.
+"""
+
 import os
 import sys
 import argparse
@@ -8,7 +18,6 @@ import numpy as np
 import torch
 
 # Ensure src/ is in the PYTHONPATH with high robustness
-# 以高健壯性將 'src' 目錄加入 Python 路徑，確保能獨立執行且順利匯入
 src_dir = Path(__file__).resolve().parent.parent
 if str(src_dir) not in sys.path:
     sys.path.append(str(src_dir))
@@ -59,7 +68,6 @@ def evaluate_policy() -> None:
     """
     Load a trained continuous PPO controller, run deterministic greedy evaluation
     across benchmark gestures, print metrics, and save detailed results to CSV.
-    加載訓練好的 PPO 控制器，在基準手勢上執行確定性貪婪策略評估，印出指標，並將詳細結果儲存至 CSV。
     """
     args = parse_args()
     
@@ -134,7 +142,7 @@ def evaluate_policy() -> None:
                 # Deterministic greedy action selection (uses mean of distribution, variance=0)
                 action, _, _ = agent.select_action(torch.tensor(obs), deterministic=True)
                 
-                # Step the simulation
+                # Step the simulation forward
                 action_np = action.numpy()[0] if len(action.shape) > 1 else action.numpy()
                 next_obs, reward, terminated, truncated, step_info = env.step(action_np)
                 done = terminated or truncated
@@ -142,6 +150,7 @@ def evaluate_policy() -> None:
                 ep_steps += 1
                 cumulative_reward += reward
 
+                # terminated indicates consecutive successful gesture hold streak achieved
                 if terminated:
                     ep_success = True
 

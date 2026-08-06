@@ -1,3 +1,15 @@
+"""
+PPO Training Runner
+Stage: Phase 4 & 5 (Training Pipeline & Log Mapping)
+Primary Function:
+- Sets random seeds for full reproducibility.
+- Initializes G1 Gymnasium hand environment and PPO agent.
+- Orchestrates the on-policy trajectory collection loops.
+- Writes detailed step-level, episode-level, and update-level metrics to CSV log files.
+- Computes bootstrapping state value estimates and GAE advantages on trajectory bounds.
+- Runs policy gradient updates and saves checkpoint weights model files.
+"""
+
 import os
 import sys
 import argparse
@@ -11,7 +23,6 @@ from pathlib import Path
 from typing import Dict, Any
 
 # Ensure src/ is in the PYTHONPATH with high robustness
-# 以高健壯性將 'src' 目錄加入 Python 路徑，確保能獨立執行且順利匯入
 src_dir = Path(__file__).resolve().parent.parent
 if str(src_dir) not in sys.path:
     sys.path.append(str(src_dir))
@@ -61,7 +72,7 @@ def run_training(args: argparse.Namespace):
     os.makedirs(args.results_dir, exist_ok=True)
     os.makedirs("models", exist_ok=True)
 
-    # Save training configuration
+    # Save training configuration parameters
     config_path = os.path.join(args.results_dir, "config.json")
     with open(config_path, "w") as f:
         json.dump(vars(args), f, indent=4)
@@ -113,7 +124,7 @@ def run_training(args: argparse.Namespace):
 
     buffer = RolloutBuffer(args.rollout_length, state_dim, action_dim, device=device)
 
-    # 4. Open CSV Log files
+    # 4. Open CSV Log files for aligned math-to-log checks
     step_log_path = os.path.join(args.results_dir, "step_log.csv")
     update_log_path = os.path.join(args.results_dir, "update_log.csv")
     episode_log_path = os.path.join(args.results_dir, "episode_log.csv")
@@ -126,7 +137,7 @@ def run_training(args: argparse.Namespace):
     update_writer = csv.writer(update_log_file)
     episode_writer = csv.writer(episode_log_file)
 
-    # Write headers
+    # Write headers matching the alignment matrix
     step_writer.writerow(["episode", "step", "gesture", "pose_error", "orientation_error", "reward", "value", "next_value", "td_target", "advantage", "actor_mean", "actor_std", "action_sample", "action_clipped"])
     update_writer.writerow(["update", "total_steps", "actor_loss", "critic_loss", "entropy", "total_loss", "clip_fraction", "grad_norm", "explained_variance", "approx_kl", "lr", "mean_reward", "success_rate", "completed_episodes"])
     episode_writer.writerow(["Episode", "Gesture", "Reward", "Success", "Steps", "Final Pose Error", "Hold Duration", "Safety Violation"])
@@ -149,7 +160,7 @@ def run_training(args: argparse.Namespace):
     success_history = []
     reward_history = []
 
-    # Table Header for Console Prints (Update level progress)
+    # Table Header for Console Prints (Update level progress dashboard)
     print(f"\n{'Update':<6} | {'Steps':<8} | {'Ep_Done':<7} | {'Mean_Rwd':<8} | {'Succ_%':<6} | {'Loss_A':<8} | {'Loss_C':<8} | {'Entropy':<7} | {'Time':<6} | {'Last_Gesture':<12}")
     print("-" * 102)
 
@@ -157,7 +168,7 @@ def run_training(args: argparse.Namespace):
     max_steps = 20 if args.smoke_test else args.max_total_steps
 
     while total_steps < max_steps:
-        # Collect rollouts
+        # Clear buffer at the beginning of each rollout loop
         buffer.clear()
         last_next_obs_t = obs_t.clone()
         
@@ -172,12 +183,12 @@ def run_training(args: argparse.Namespace):
         for step in range(args.rollout_length):
             action, log_prob, value, mu, std = agent.select_action(obs_t, return_dist_params=True)
             
-            # Step simulation
+            # Step the simulation step forward
             action_np = action.numpy()[0] if len(action.shape) > 1 else action.numpy()
             next_obs, reward, terminated, truncated, step_info = env.step(action_np)
             done = terminated or truncated
             
-            # Record step metrics
+            # Record step metrics inside rollout buffer
             buffer.insert(obs_t, action, reward, terminated, truncated, log_prob, value)
             
             # Buffer step parameters for batched writing after rollout calculation
@@ -213,7 +224,7 @@ def run_training(args: argparse.Namespace):
                 rollout_completed_successes.append(int(is_success))
                 rollout_last_gesture = step_info.get("target_gesture", "N/A")
 
-                # Write to episode log silently (no print statements here to avoid cluttering)
+                # Write to episode log silently
                 episode_writer.writerow([
                     episode_count, 
                     step_info.get("target_gesture", "N/A"), 
@@ -289,7 +300,7 @@ def run_training(args: argparse.Namespace):
             ])
         step_log_file.flush()
 
-        # Optimize network weights
+        # Optimize network weights parameters
         metrics = agent.update(buffer)
         
         # Calculate rollout summary metrics
@@ -337,7 +348,7 @@ def run_training(args: argparse.Namespace):
             ckpt_path = os.path.join("models", f"{config_name}_checkpoint_{total_steps}.pt")
             agent.save_checkpoint(ckpt_path)
 
-    # Save best/final weights
+    # Save best/final weights parameters
     config_name = Path(args.results_dir).name
     final_model_path = os.path.join("models", f"{config_name}_best.pt")
     agent.save_checkpoint(final_model_path)
@@ -357,7 +368,7 @@ def run_training(args: argparse.Namespace):
     print(f"Mean cumulative reward (last 20 episodes): {mean_reward_final_20:.4f}")
     print("==================================================")
 
-    # Close file handles and env
+    # Close file handles and environment
     step_log_file.close()
     update_log_file.close()
     episode_log_file.close()
