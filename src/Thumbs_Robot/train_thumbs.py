@@ -345,12 +345,16 @@ def run_training(args: argparse.Namespace):
         # Save checkpoint periodically
         if (total_steps // args.rollout_length) % 10 == 0 and not args.smoke_test:
             config_name = Path(args.results_dir).name
-            ckpt_path = os.path.join("models", f"{config_name}_checkpoint_{total_steps}.pt")
+            model_dir = os.path.join("models", config_name)
+            os.makedirs(model_dir, exist_ok=True)
+            ckpt_path = os.path.join(model_dir, f"{config_name}_checkpoint_{total_steps}.pt")
             agent.save_checkpoint(ckpt_path)
 
     # Save best/final weights parameters
     config_name = Path(args.results_dir).name
-    final_model_path = os.path.join("models", f"{config_name}_best.pt")
+    model_dir = os.path.join("models", config_name)
+    os.makedirs(model_dir, exist_ok=True)
+    final_model_path = os.path.join(model_dir, f"{config_name}_best.pt")
     agent.save_checkpoint(final_model_path)
     
     # Training completion summary
