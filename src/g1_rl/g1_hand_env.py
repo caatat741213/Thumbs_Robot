@@ -231,10 +231,10 @@ class G1HandEnv(gym.Env):
 
         # Scripted arm presentation posture (shoulder and elbow held stable to showcase gestures)
         pres_joints = {
-            "left_shoulder_pitch_joint": -0.5,
-            "left_shoulder_roll_joint": 0.4,
-            "left_shoulder_yaw_joint": -0.2,
-            "left_elbow_joint": 1.2
+            "left_shoulder_pitch_joint": -1.57,
+            "left_shoulder_roll_joint": 0.0,
+            "left_shoulder_yaw_joint": 0.0,
+            "left_elbow_joint": 0.0
         }
         for name, pose_val in pres_joints.items():
             try:
