@@ -20,7 +20,7 @@ def evaluate_baseline(mode: str, num_episodes: int = 20):
     print("========================================")
 
     # 1. Environment initialization
-    xml_path = os.path.join("assets", "g1_hand.xml")
+    xml_path = os.path.join("assets", "g1_fixed_base/scene_29dof_fixed_base.xml")
     env = G1HandEnv(xml_path=xml_path)
     action_dim = env.action_space.shape[0]
 

@@ -5,6 +5,7 @@ Primary Function:
 - Converts the default 29-DOF floating-base Unitree G1 robot model into a fixed-base robot model.
 - Removes the free joint from the pelvis body.
 - Sets a practical base height and orientation, and updates meshing/include paths for scene XML.
+- Programmatically injects visual passive finger capsule joints for gesture rendering.
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ def indent_xml(element: ET.Element, level: int = 0) -> None:
 def create_fixed_base_model() -> None:
     """
     Loads source G1 model, updates mesh directories, removes pelvis free joint, 
-    and saves the modified XML as the fixed-base model.
+    and saves the modified XML as the fixed-base model with visual finger joints.
     """
     if not SOURCE_MODEL.is_file():
         raise FileNotFoundError(
@@ -132,6 +133,81 @@ def create_fixed_base_model() -> None:
     # Place the fixed pelvis at a practical height (80cm) above the floor.
     pelvis.set("pos", "0 0 0.80")
     pelvis.set("quat", "1 0 0 0")
+
+    # Programmatically inject visual fingers inside left_wrist_yaw_link for report presentation
+    left_wrist_yaw_link = root.find(".//body[@name='left_wrist_yaw_link']")
+    if left_wrist_yaw_link is not None:
+        # Add Left Thumb (Rotates around Y-axis, adjusted position to prevent wrist mesh clipping)
+        thumb_body = ET.SubElement(left_wrist_yaw_link, "body", {
+            "name": "left_thumb_link",
+            "pos": "0.04 0.02 0.01",
+            "quat": "0.7071 0 0.7071 0"
+        })
+        ET.SubElement(thumb_body, "joint", {
+            "name": "left_thumb_joint",
+            "type": "hinge",
+            "axis": "0 1 0",
+            "range": "-1.57 0",
+            "damping": "0.1",
+            "armature": "0.01"
+        })
+        ET.SubElement(thumb_body, "geom", {
+            "type": "capsule",
+            "size": "0.006 0.015",
+            "pos": "0 0 0.015",
+            "rgba": "0.2 0.2 0.2 1",
+            "group": "1",
+            "contype": "0",
+            "conaffinity": "0"
+        })
+
+        # Add Left Index Finger (Rotates around Y-axis)
+        index_body = ET.SubElement(left_wrist_yaw_link, "body", {
+            "name": "left_index_link",
+            "pos": "0.06 0.008 -0.01"
+        })
+        ET.SubElement(index_body, "joint", {
+            "name": "left_index_joint",
+            "type": "hinge",
+            "axis": "0 1 0",
+            "range": "0 1.57",
+            "damping": "0.1",
+            "armature": "0.01"
+        })
+        ET.SubElement(index_body, "geom", {
+            "type": "capsule",
+            "size": "0.005 0.018",
+            "pos": "0.018 0 0",
+            "quat": "0.7071 0 0.7071 0",
+            "rgba": "0.2 0.2 0.2 1",
+            "group": "1",
+            "contype": "0",
+            "conaffinity": "0"
+        })
+
+        # Add Left Middle Finger (Rotates around Y-axis)
+        middle_body = ET.SubElement(left_wrist_yaw_link, "body", {
+            "name": "left_middle_link",
+            "pos": "0.06 -0.008 -0.01"
+        })
+        ET.SubElement(middle_body, "joint", {
+            "name": "left_middle_joint",
+            "type": "hinge",
+            "axis": "0 1 0",
+            "range": "0 1.57",
+            "damping": "0.1",
+            "armature": "0.01"
+        })
+        ET.SubElement(middle_body, "geom", {
+            "type": "capsule",
+            "size": "0.005 0.018",
+            "pos": "0.018 0 0",
+            "quat": "0.7071 0 0.7071 0",
+            "rgba": "0.2 0.2 0.2 1",
+            "group": "1",
+            "contype": "0",
+            "conaffinity": "0"
+        })
 
     # Re-indent and write XML
     indent_xml(root)

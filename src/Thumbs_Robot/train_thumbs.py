@@ -117,6 +117,7 @@ def run_training(args: argparse.Namespace):
         ppo_epochs=args.ppo_epochs,
         batch_size=args.batch_size,
         clip_epsilon=args.clip_epsilon,
+        entropy_coef=args.entropy_coef,
         hidden_dim=args.hidden_dim,
         initial_log_std=args.initial_log_std,
         device=device
@@ -394,6 +395,7 @@ if __name__ == "__main__":
     parser.add_argument("--smoke-test", action="store_true", help="Execute rapid smoke test override")
     parser.add_argument("--hidden-dim", type=int, default=256, help="Hidden layer dimension of Actor-Critic network")
     parser.add_argument("--initial-log-std", type=float, default=-0.5, help="Initial log standard deviation for actions")
+    parser.add_argument("--entropy-coef", type=float, default=0.01, help="Entropy coefficient for exploration regularization")
 
     args = parser.parse_args()
     

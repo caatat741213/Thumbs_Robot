@@ -9,10 +9,12 @@ Primary Function:
 
 import argparse
 import os
+import time
 from typing import Optional
 import mujoco
+import mujoco.viewer
 
-def audit_g1_model(xml_path: str, use_viewer: bool = False):
+def audit_g1_model(xml_path: str, use_viewer: bool = False) -> None:
     """
     Load the fixed-base Unitree G1 model and audit its joints, limits, and actuators.
     Helps calibrate target pose vectors for Thumbs Up, Open/Stop, and Thumbs Down.
@@ -60,7 +62,21 @@ def audit_g1_model(xml_path: str, use_viewer: bool = False):
 
     if use_viewer:
         print("\nLaunching MuJoCo passive viewer for manual posture calibration...")
-        # Note: Active viewer launch depends on mujoco visualizer availability.
+        try:
+            with mujoco.viewer.launch_passive(model, data) as viewer:
+                print("Viewer successfully launched. Close the window to exit.")
+                while viewer.is_running():
+                    step_start = time.time()
+                    mujoco.mj_step(model, data)
+                    viewer.sync()
+                    
+                    # Maintain real-time simulation speed
+                    time_elapsed = time.time() - step_start
+                    if model.opt.timestep > time_elapsed:
+                        time.sleep(model.opt.timestep - time_elapsed)
+        except Exception as e:
+            print(f"Error launching MuJoCo passive viewer: {e}")
+            print("Please ensure your environment has graphical display support.")
     else:
         print("\nHeadless audit completed. Save these ranges to target vectors.")
 
@@ -70,7 +86,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--xml-path", 
         type=str, 
-        default="assets/g1_hand.xml", 
+        default="assets/g1_fixed_base/scene_29dof_fixed_base.xml", 
         help="Path to G1 hand MuJoCo XML model file"
     )
     parser.add_argument(

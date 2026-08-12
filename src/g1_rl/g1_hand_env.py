@@ -100,7 +100,6 @@ class G1HandEnv(gym.Env):
         )
 
         # 5. Continuous Action Space: a_t = [dw_roll, dw_pitch, dw_yaw, d_thumb, d_fingers] (dim=5)
-        # Action boundaries normalized to [-1.0, 1.0] for optimization stability
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(5,), dtype=np.float32
         )
@@ -112,9 +111,9 @@ class G1HandEnv(gym.Env):
             2: "THUMBS_DOWN"
         }
         self.target_vectors = {
-            0: np.array([1.2, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),   # THUMBS_UP
+            0: np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),   # THUMBS_UP
             1: np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0], dtype=np.float32),   # OPEN_STOP
-            2: np.array([-1.2, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),  # THUMBS_DOWN
+            2: np.array([-1.5, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),  # THUMBS_DOWN
         }
 
         # Simulated dynamic states for the virtual G1 3-digit fingers (scaled [0.0, 1.0])
@@ -125,11 +124,22 @@ class G1HandEnv(gym.Env):
         self.last_action = np.zeros(5, dtype=np.float32)
         self.controller_target = np.zeros(3, dtype=np.float32)
         self.hold_targets = np.zeros(self.model.nq, dtype=np.float64)
+        self.prev_e_t = 0.0
         
         self.episode_step = 0
         self.success_streak = 0
         self.viewer = None
         self.dt = self.model.opt.timestep * self.frame_skip
+
+        # Finger visual joints lookup (if present in the model)
+        self.has_visual_fingers = False
+        try:
+            self.thumb_qpos_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_thumb_joint")])
+            self.index_qpos_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_index_joint")])
+            self.middle_qpos_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_middle_joint")])
+            self.has_visual_fingers = True
+        except Exception:
+            self.has_visual_fingers = False
 
     def _require_id(self, object_type: mujoco.mjtObj, name: str) -> int:
         """Helper to safely retrieve MuJoCo ID."""
@@ -149,6 +159,17 @@ class G1HandEnv(gym.Env):
             qvel_index = int(self.model.jnt_dofadr[joint_id])
             mapping.append((actuator_id, qpos_index, qvel_index))
         return mapping
+
+    def _sync_visual_fingers(self) -> None:
+        """Syncs the virtual finger state variables to the visual MuJoCo joints."""
+        if not self.has_visual_fingers:
+            return
+        # thumb: 1.0 (extended) -> 0.0 rad, 0.0 (retracted) -> -1.57 rad
+        self.data.qpos[self.thumb_qpos_addr] = (self.virtual_qpos[0] - 1.0) * 1.57
+        # index: 1.0 (extended) -> 0.0 rad, 0.0 (retracted) -> 1.57 rad
+        self.data.qpos[self.index_qpos_addr] = (1.0 - self.virtual_qpos[1]) * 1.57
+        # middle: 1.0 (extended) -> 0.0 rad, 0.0 (retracted) -> 1.57 rad
+        self.data.qpos[self.middle_qpos_addr] = (1.0 - self.virtual_qpos[2]) * 1.57
 
     @staticmethod
     def _calculate_pd_torque(target_angle: float, current_angle: float, current_velocity: float, kp: float, kd: float) -> float:
@@ -220,8 +241,9 @@ class G1HandEnv(gym.Env):
             control_low, control_high = self.model.actuator_ctrlrange[actuator_id]
             self.data.ctrl[actuator_id] = np.clip(commanded_torque, control_low, control_high)
 
+
     def reset(self, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
-        """Resets the environment, physical states, and samples new target gesture."""
+        """Resets the environment, physical states, and sets exact target posture."""
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
 
@@ -229,26 +251,58 @@ class G1HandEnv(gym.Env):
         self.data.qvel[:] = 0.0
         self.data.ctrl[:] = 0.0
 
-        # Scripted arm presentation posture (shoulder and elbow held stable to showcase gestures)
+        # Initialize simulated dynamic fingers
+        self.virtual_qpos = np.zeros(3, dtype=np.float32)
+        self.virtual_qvel.fill(0.0)
+
+        self.last_action.fill(0.0)
+        self.episode_step = 0
+        self.success_streak = 0
+
+        # === 核心修改：精確對照目標圖的姿態數值 ===
         pres_joints = {
-            "left_shoulder_pitch_joint": -1.57,
-            "left_shoulder_roll_joint": 0.0,
-            "left_shoulder_yaw_joint": 0.0,
-            "left_elbow_joint": 0.0
+            # --- 左臂：水平伸直，向側前方張開 ---
+            "left_shoulder_pitch_joint": -0.3,   # 稍微向前抬起
+            "left_shoulder_roll_joint": 1.45,    # 向側邊平舉抬至水平 (~83度)
+            "left_shoulder_yaw_joint": 0.0,     # 前臂維持正向
+            "left_elbow_joint": 0.0,            # 肘關節完全打直 (Straight)
+            "left_wrist_roll_joint": 0.0,
+            "left_wrist_pitch_joint": 0.0,
+            "left_wrist_yaw_joint": 0.0,
+
+            # --- 右臂：完全打直，順著軀幹自然下垂貼附大腿 ---
+            "right_shoulder_pitch_joint": 0.0,   # 不前後抬起
+            "right_shoulder_roll_joint": 0.0,    # 貼緊軀幹側邊
+            "right_shoulder_yaw_joint": 0.0,
+            "right_elbow_joint": 0.0,            # 右肘完全打直，不彎曲胸前
+            "right_wrist_roll_joint": 0.0,
+            "right_wrist_pitch_joint": 0.0,
+            "right_wrist_yaw_joint": 0.0,
+
+            # --- 腰部與雙腿：完全站直 ---
+            "waist_pitch_joint": 0.0,
+            "waist_roll_joint": 0.0,
+            "waist_yaw_joint": 0.0,
         }
+
+        # 1. 將姿態寫入 data.qpos
         for name, pose_val in pres_joints.items():
             try:
                 jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
                 if jid >= 0:
                     qpos_addr = self.model.jnt_qposadr[jid]
                     self.data.qpos[qpos_addr] = pose_val
-            except:
+            except Exception:
                 pass
 
-        mujoco.mj_forward(self.model, self.data)
-        self.hold_targets = self.data.qpos.copy()
+        # 2. 同步視覺手指
+        self._sync_visual_fingers()
 
-        # Configure target gesture configuration selection
+        # 3. 執行前向運動學更新，並【關鍵】將當前姿態複製給 hold_targets
+        mujoco.mj_forward(self.model, self.data)
+        self.hold_targets = self.data.qpos.copy()  # 這一步確保 PD 控制器不會把手臂拉回原點！
+
+        # 配置當前 Target Gesture
         if options is not None and "gesture_id" in options:
             self.current_gesture_id = int(options["gesture_id"])
         elif options is not None and "target_gesture" in options:
@@ -262,16 +316,15 @@ class G1HandEnv(gym.Env):
         else:
             self.current_gesture_id = self.np_random.choice(list(self.gestures.keys()))
 
-        # Reset controller targets to match initial physical positions
+        # 重置控制器目標為當前手腕位置
         self.controller_target = np.array([self.data.qpos[idx] for idx in self.wrist_qpos_indices], dtype=np.float32)
 
-        # Initialize simulated dynamic fingers with minor randomized noise for exploration
-        self.virtual_qpos = self.np_random.uniform(0.1, 0.9, size=3).astype(np.float32)
-        self.virtual_qvel.fill(0.0)
-
-        self.last_action.fill(0.0)
-        self.episode_step = 0
-        self.success_streak = 0
+        # 計算初始誤差
+        q_wrist = np.array([self.data.qpos[idx] for idx in self.wrist_qpos_indices], dtype=np.float32)
+        q_target = self.target_vectors[self.current_gesture_id]
+        initial_pose_error = float(np.linalg.norm(self.virtual_qpos - q_target[3:]))
+        initial_orient_error = float(np.linalg.norm(q_wrist - q_target[:3]))
+        self.prev_e_t = 1.0 * initial_orient_error + 1.0 * initial_pose_error
 
         observation = self._get_observation()
         info = self._get_info()
@@ -280,6 +333,7 @@ class G1HandEnv(gym.Env):
             self.render()
 
         return observation, info
+
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """Applies action steps, runs simulation, checks termination, and returns reward."""
@@ -313,12 +367,21 @@ class G1HandEnv(gym.Env):
             self._apply_controller()
             mujoco.mj_step(self.model, self.data)
 
+        # Force sync visual fingers posture and update kinematics AFTER physics step loop
+        self._sync_visual_fingers()
+        mujoco.mj_forward(self.model, self.data)
+
         self.episode_step += 1
 
         # Check Hold Success and Termination Criteria
         info = self._get_info()
         pose_error = info["pose_error_norm"]
         orient_error = info["orientation_error"]
+
+        # Calculate current weighted posture error e_t and progress reward
+        e_t = 1.0 * orient_error + 1.0 * pose_error
+        r_progress = float(self.prev_e_t - e_t)
+        self.prev_e_t = e_t
 
         # Hold criteria: both finger pose error and wrist orientation error are below thresholds
         if pose_error <= self.pose_tolerance and orient_error <= self.orient_tolerance:
@@ -331,7 +394,7 @@ class G1HandEnv(gym.Env):
         truncated = self.episode_step >= self.maximum_episode_steps
 
         # Compute Reward components
-        reward, reward_info = self.compute_reward(clipped_action, pose_error, orient_error)
+        reward, reward_info = self.compute_reward(clipped_action, pose_error, orient_error, r_progress)
         
         # Success bonus injection
         if terminated:
@@ -347,7 +410,7 @@ class G1HandEnv(gym.Env):
 
         return observation, float(reward), terminated, truncated, info
 
-    def compute_reward(self, action: np.ndarray, pose_error: float, orientation_error: float) -> Tuple[float, Dict[str, float]]:
+    def compute_reward(self, action: np.ndarray, pose_error: float, orientation_error: float, r_progress: float) -> Tuple[float, Dict[str, float]]:
         """Computes multi-objective reward combining errors, smooth penalties, and bonuses."""
         # Weights for multi-objective optimization components
         w_progress = 1.5
@@ -356,11 +419,10 @@ class G1HandEnv(gym.Env):
         w_smooth = 0.05
         w_smooth_delta = 0.05
         w_joint_limit = 0.2
+        w_vel = 0.01  # Weight for joint velocity penalty
         b_hold = 0.5
         c_time = 0.1
 
-        # Progress reward can be added during trajectory transitions
-        r_progress = 0.0 
         r_hand = -pose_error
         r_orient = -orientation_error
         r_smooth = -float(np.sum(np.square(action)))
@@ -377,6 +439,11 @@ class G1HandEnv(gym.Env):
                 limit_violations += 1.0
         r_joint_limit = -limit_violations
 
+        # Joint velocity penalty
+        v_wrist = np.array([self.data.qvel[idx] for idx in self.wrist_qvel_indices], dtype=np.float32)
+        v_t = np.concatenate([v_wrist, self.virtual_qvel])
+        r_vel = -float(np.sum(np.square(v_t)))
+
         # Hold bonus reward: encourage maintaining safe stable gesture posture
         r_hold = b_hold if (pose_error <= self.pose_tolerance and orientation_error <= self.orient_tolerance) else 0.0
         r_success = 0.0 # Success terminal bonus handled at step-level
@@ -389,6 +456,7 @@ class G1HandEnv(gym.Env):
             + (w_smooth * r_smooth)
             + (w_smooth_delta * r_smooth_delta)
             + (w_joint_limit * r_joint_limit)
+            + (w_vel * r_vel)
             + r_hold
             + r_success
             + r_time
@@ -402,6 +470,7 @@ class G1HandEnv(gym.Env):
             "smoothness_penalty": r_smooth,
             "smoothness_delta_penalty": r_smooth_delta,
             "joint_limit_penalty": r_joint_limit,
+            "velocity_penalty": r_vel,
             "hold_bonus": r_hold,
             "success_bonus": r_success,
             "time_penalty": r_time
