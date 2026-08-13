@@ -244,17 +244,17 @@ $$
 r_t = w_p(e_{t-1} - e_t) - w_h E_{\text{hand}} - w_o E_{\text{orientation}} - w_v \|\dot{q}_t\|_2^2 - w_a \|a_t\|_2^2 - w_s \|a_t - a_{t-1}\|_2^2 - w_j P_{\text{joint-limit}} + b_{\text{hold}} I_{\text{hold}} - c_{\text{time}}
 $$
 
-     It combines:
-     * **Progress Reward (<i>w</i><sub>p</sub> = 1.5):** Encourages moving towards target posture.
-     * **Hand Pose Error Penalty (<i>w</i><sub>h</sub> = 2.0):** <i>E</i><sub>hand</sub> is the L2 norm of virtual fingers error.
-     * **Orientation Penalty (<i>w</i><sub>o</sub> = 1.0):** <i>E</i><sub>orientation</sub> is the L2 norm of wrist joint error.
-     * **Action Magnitude Penalty (<i>w</i><sub>a</sub> = 0.05):** Penalizes large action increments.
-     * **Action Smoothness Penalty (<i>w</i><sub>s</sub> = 0.05):** Penalizes change in actions to prevent jittering.
-     * **Joint Limit Penalty (<i>w</i><sub>j</sub> = 0.2):** Penalizes approaching joint physical limits.
-     * **Velocity Penalty (<i>w</i><sub>v</sub> = 0.01):** Reduces high joint velocities.
-     * **Hold Bonus (<i>b</i><sub>hold</sub> = 0.5):** Awarded if errors are within tolerance.
-     * **Success Bonus (<i>b</i><sub>success</sub> = 10.0):** Awarded upon meeting the hold streak requirement.
-     * **Time Penalty (<i>c</i><sub>time</sub> = 0.1):** Encourages fast convergence.
+   It combines:
+   * **Progress Reward (<i>w</i><sub>p</sub> = 1.5):** Encourages moving towards target posture.
+   * **Hand Pose Error Penalty (<i>w</i><sub>h</sub> = 2.0):** <i>E</i><sub>hand</sub> is the L2 norm of virtual fingers error.
+   * **Orientation Penalty (<i>w</i><sub>o</sub> = 1.0):** <i>E</i><sub>orientation</sub> is the L2 norm of wrist joint error.
+   * **Action Magnitude Penalty (<i>w</i><sub>a</sub> = 0.05):** Penalizes large action increments.
+   * **Action Smoothness Penalty (<i>w</i><sub>s</sub> = 0.05):** Penalizes change in actions to prevent jittering.
+   * **Joint Limit Penalty (<i>w</i><sub>j</sub> = 0.2):** Penalizes approaching joint physical limits.
+   * **Velocity Penalty (<i>w</i><sub>v</sub> = 0.01):** Reduces high joint velocities.
+   * **Hold Bonus (<i>b</i><sub>hold</sub> = 0.5):** Awarded if errors are within tolerance.
+   * **Success Bonus (<i>b</i><sub>success</sub> = 10.0):** Awarded upon meeting the hold streak requirement.
+   * **Time Penalty (<i>c</i><sub>time</sub> = 0.1):** Encourages fast convergence.
    * **Success Conditions:** Success is declared when hand pose and orientation errors remain within tolerance (`pose_tolerance = 0.06`, `orient_tolerance = 0.12`) for at least 15 consecutive steps.
 
 2. **Actor-Critic Network (`actor_critic_network.py`):**
