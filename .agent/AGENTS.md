@@ -26,6 +26,7 @@
    - `doc/Assignment3.md`：作為基準 (Baseline) 參考的作業三規範。
    - `doc/Unitree_MuJoCo_G1_Primer_Workshop.md`：作為環境設定與操作的參考文件，用來參考環境基處設定手冊。
    - `doc/maproad.md`：作為PPO演算法的流程圖。
+   - `doc/parameter.md`: 是個關節對應參數
    - `Thumbs_Robot_TW.ipynb`：專案操作ipynb檔案，是讓使用者、教授與未來clone的人可以一步一步操作了解整個專案的ipynb檔案跟筆記。
 
 2. **主動提醒與糾錯**：若用戶的 Prompt 或指示違背了 `doc/` 內的任何規範（例如：試圖使用 5 指人類手掌非 3 指形態、遺漏控制日誌、缺少數學公式與程式碼的映射等），你**必須主動指出並提醒用戶遵守作業規範**。

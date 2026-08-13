@@ -9,9 +9,13 @@ logs/
 # Keep directories in Git but ignore their contents (using .gitkeep)
 /results/*
 !/results/.gitkeep
+!/results/ppo_config_a4/
+!/results/ppo_config_a4_evaluation/
 
 /models/*
 !/models/.gitkeep
+!/models/ppo_config_a4/ppo_config_a4_best.pt
 
 /external/*
 !/external/.gitkeep
+

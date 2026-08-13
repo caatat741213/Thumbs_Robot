@@ -111,9 +111,9 @@ class G1HandEnv(gym.Env):
             2: "THUMBS_DOWN"
         }
         self.target_vectors = {
-            0: np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),   # THUMBS_UP
-            1: np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0], dtype=np.float32),   # OPEN_STOP
-            2: np.array([-1.5, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),  # THUMBS_DOWN
+            0: np.array([-1.57, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),   # THUMBS_UP
+            1: np.array([1.57, 0.0, 1.6144, 0.0, 1.0, 1.0], dtype=np.float32),   # OPEN_STOP
+            2: np.array([1.57, 0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32),  # THUMBS_DOWN
         }
 
         # Simulated dynamic states for the virtual G1 3-digit fingers (scaled [0.0, 1.0])
@@ -134,9 +134,13 @@ class G1HandEnv(gym.Env):
         # Finger visual joints lookup (if present in the model)
         self.has_visual_fingers = False
         try:
-            self.thumb_qpos_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_thumb_joint")])
-            self.index_qpos_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_index_joint")])
-            self.middle_qpos_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_middle_joint")])
+            self.thumb_0_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_hand_thumb_0_joint")])
+            self.thumb_1_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_hand_thumb_1_joint")])
+            self.thumb_2_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_hand_thumb_2_joint")])
+            self.index_0_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_hand_index_0_joint")])
+            self.index_1_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_hand_index_1_joint")])
+            self.middle_0_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_hand_middle_0_joint")])
+            self.middle_1_addr = int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_hand_middle_1_joint")])
             self.has_visual_fingers = True
         except Exception:
             self.has_visual_fingers = False
@@ -164,12 +168,19 @@ class G1HandEnv(gym.Env):
         """Syncs the virtual finger state variables to the visual MuJoCo joints."""
         if not self.has_visual_fingers:
             return
-        # thumb: 1.0 (extended) -> 0.0 rad, 0.0 (retracted) -> -1.57 rad
-        self.data.qpos[self.thumb_qpos_addr] = (self.virtual_qpos[0] - 1.0) * 1.57
-        # index: 1.0 (extended) -> 0.0 rad, 0.0 (retracted) -> 1.57 rad
-        self.data.qpos[self.index_qpos_addr] = (1.0 - self.virtual_qpos[1]) * 1.57
-        # middle: 1.0 (extended) -> 0.0 rad, 0.0 (retracted) -> 1.57 rad
-        self.data.qpos[self.middle_qpos_addr] = (1.0 - self.virtual_qpos[2]) * 1.57
+        
+        # 1. Thumb (Opposition thumb_0 at 0.0, flexion thumb_1 and thumb_2 bend as virtual_qpos[0] decreases)
+        self.data.qpos[self.thumb_0_addr] = 0.0
+        self.data.qpos[self.thumb_1_addr] = (1.0 - self.virtual_qpos[0]) * 1.0
+        self.data.qpos[self.thumb_2_addr] = (1.0 - self.virtual_qpos[0]) * 1.74533
+        
+        # 2. Index (index_0 and index_1 bend inward/negative direction as virtual_qpos[1] decreases)
+        self.data.qpos[self.index_0_addr] = (self.virtual_qpos[1] - 1.0) * 1.5708
+        self.data.qpos[self.index_1_addr] = (self.virtual_qpos[1] - 1.0) * 1.74533
+        
+        # 3. Middle (middle_0 and middle_1 bend inward/negative direction as virtual_qpos[2] decreases)
+        self.data.qpos[self.middle_0_addr] = (self.virtual_qpos[2] - 1.0) * 1.5708
+        self.data.qpos[self.middle_1_addr] = (self.virtual_qpos[2] - 1.0) * 1.74533
 
     @staticmethod
     def _calculate_pd_torque(target_angle: float, current_angle: float, current_velocity: float, kp: float, kd: float) -> float:
@@ -261,23 +272,32 @@ class G1HandEnv(gym.Env):
 
         # === 核心修改：精確對照目標圖的姿態數值 ===
         pres_joints = {
-            # --- 左臂：水平伸直，向側前方張開 ---
-            "left_shoulder_pitch_joint": -0.3,   # 稍微向前抬起
-            "left_shoulder_roll_joint": 1.45,    # 向側邊平舉抬至水平 (~83度)
-            "left_shoulder_yaw_joint": 0.0,     # 前臂維持正向
-            "left_elbow_joint": 0.0,            # 肘關節完全打直 (Straight)
+
+            "left_shoulder_pitch_joint": 0.0,   
+            "left_shoulder_roll_joint": 0.0,    
+            "left_shoulder_yaw_joint": 0.0,     
+            "left_elbow_joint": 0.0,            
             "left_wrist_roll_joint": 0.0,
             "left_wrist_pitch_joint": 0.0,
             "left_wrist_yaw_joint": 0.0,
 
-            # --- 右臂：完全打直，順著軀幹自然下垂貼附大腿 ---
-            "right_shoulder_pitch_joint": 0.0,   # 不前後抬起
-            "right_shoulder_roll_joint": 0.0,    # 貼緊軀幹側邊
+
+            "right_shoulder_pitch_joint": 0.0,  
+            "right_shoulder_roll_joint": 0.0,   
             "right_shoulder_yaw_joint": 0.0,
-            "right_elbow_joint": 0.0,            # 右肘完全打直，不彎曲胸前
+            "right_elbow_joint": 1.5708,            
             "right_wrist_roll_joint": 0.0,
             "right_wrist_pitch_joint": 0.0,
             "right_wrist_yaw_joint": 0.0,
+
+            # --- 右手靈巧手 (Right Dex3 Hand) ---
+            "right_hand_thumb_0_joint": 0.0,
+            "right_hand_thumb_1_joint": -1.0472,
+            "right_hand_thumb_2_joint": -1.74533,
+            "right_hand_middle_0_joint": 1.5708,
+            "right_hand_middle_1_joint": 1.74533,
+            "right_hand_index_0_joint": 1.5708,
+            "right_hand_index_1_joint": 1.74533,
 
             # --- 腰部與雙腿：完全站直 ---
             "waist_pitch_joint": 0.0,

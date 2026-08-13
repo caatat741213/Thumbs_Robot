@@ -1,0 +1,17 @@
+{
+    "seed": 666,
+    "lr": 0.0003,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_epsilon": 0.2,
+    "ppo_epochs": 10,
+    "batch_size": 64,
+    "rollout_length": 2048,
+    "max_total_steps": 250000,
+    "results_dir": "results/ppo_config_a4",
+    "cpu": false,
+    "smoke_test": false,
+    "hidden_dim": 256,
+    "initial_log_std": -1.0,
+    "entropy_coef": 0.001
+}
