@@ -17,6 +17,8 @@ logs/
 !/results/ppo_config_a4/episode_log.csv
 !/results/ppo_config_a4_evaluation/
 !/results/ppo_config_a4_evaluation/**
+!/results/img/
+!/results/img/**
 
 /models/*
 !/models/.gitkeep
