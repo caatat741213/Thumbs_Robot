@@ -239,7 +239,11 @@ All scripts should be executed from the repository root with `PYTHONPATH=src`:
    * **State Space (32 Dimensions):** Features joint positions $q_t$ (6), joint velocities $\dot{q}_t$ (6), target gesture coordinates $q_{\text{target}}$ (6), joint target error $q_{\text{target}} - q_t$ (6), one-hot target gesture representation (3), and the previous step action $a_{t-1}$ (5).
    * **Action Space (5 Dimensions):** Continuous position target increments ($\Delta \theta_t$) for the wrist joints (roll, pitch, yaw) and virtual fingers (main fingers flex, thumb flex).
    * **Composite Multi-Objective Reward Function:**
-     $$r_t = w_p(e_{t-1} - e_t) - w_h E_{\text{hand}} - w_o E_{\text{orientation}} - w_v \|\dot{q}_t\|_2^2 - w_a \|a_t\|_2^2 - w_s \|a_t - a_{t-1}\|_2^2 - w_j P_{\text{joint\_limits}} + b_{\text{hold}} I_{\text{hold}} - c_{\text{time}}$$
+
+$$
+r_t = w_p(e_{t-1} - e_t) - w_h E_{\text{hand}} - w_o E_{\text{orientation}} - w_v \|\dot{q}_t\|_2^2 - w_a \|a_t\|_2^2 - w_s \|a_t - a_{t-1}\|_2^2 - w_j P_{\text{joint\_limits}} + b_{\text{hold}} I_{\text{hold}} - c_{\text{time}}
+$$
+
      It combines:
      * **Progress Reward ($w_p = 1.5$):** Encourages moving towards target posture.
      * **Hand Pose Error Penalty ($w_h = 2.0$):** $E_{\text{hand}}$ is the L2 norm of virtual fingers error.
