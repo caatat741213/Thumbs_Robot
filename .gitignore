@@ -10,10 +10,18 @@ logs/
 /results/*
 !/results/.gitkeep
 !/results/ppo_config_a4/
+/results/ppo_config_a4/*
+!/results/ppo_config_a4/*.png
+!/results/ppo_config_a4/config.json
+!/results/ppo_config_a4/update_log.csv
+!/results/ppo_config_a4/episode_log.csv
 !/results/ppo_config_a4_evaluation/
+!/results/ppo_config_a4_evaluation/**
 
 /models/*
 !/models/.gitkeep
+!/models/ppo_config_a4/
+/models/ppo_config_a4/*
 !/models/ppo_config_a4/ppo_config_a4_best.pt
 
 /external/*
