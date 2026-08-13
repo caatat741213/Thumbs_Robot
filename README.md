@@ -236,25 +236,25 @@ All scripts should be executed from the repository root with `PYTHONPATH=src`:
 ### PPO & Environment Implementation Details
 
 1. **G1HandEnv (`g1_hand_env.py`):**
-   * **State Space (32 Dimensions):** Features joint positions $q_t$ (6), joint velocities $\dot{q}_t$ (6), target gesture coordinates $q_{\text{target}}$ (6), joint target error $q_{\text{target}} - q_t$ (6), one-hot target gesture representation (3), and the previous step action $a_{t-1}$ (5).
-   * **Action Space (5 Dimensions):** Continuous position target increments ($\Delta \theta_t$) for the wrist joints (roll, pitch, yaw) and virtual fingers (main fingers flex, thumb flex).
+   * **State Space (32 Dimensions):** Features joint positions <i>q</i><sub>t</sub> (6), joint velocities <i>q̇</i><sub>t</sub> (6), target gesture coordinates <i>q</i><sub>target</sub> (6), joint target error <i>q</i><sub>target</sub> − <i>q</i><sub>t</sub> (6), one-hot target gesture representation (3), and the previous step action <i>a</i><sub>t−1</sub> (5).
+   * **Action Space (5 Dimensions):** Continuous position target increments (<i>&Delta;&theta;</i><sub>t</sub>) for the wrist joints (roll, pitch, yaw) and virtual fingers (main fingers flex, thumb flex).
    * **Composite Multi-Objective Reward Function:**
 
 $$
-r_t = w_p(e_{t-1} - e_t) - w_h E_{\text{hand}} - w_o E_{\text{orientation}} - w_v \|\dot{q}_t\|_2^2 - w_a \|a_t\|_2^2 - w_s \|a_t - a_{t-1}\|_2^2 - w_j P_{\text{joint\_limits}} + b_{\text{hold}} I_{\text{hold}} - c_{\text{time}}
+r_t = w_p(e_{t-1} - e_t) - w_h E_{\text{hand}} - w_o E_{\text{orientation}} - w_v \|\dot{q}_t\|_2^2 - w_a \|a_t\|_2^2 - w_s \|a_t - a_{t-1}\|_2^2 - w_j P_{\text{joint-limit}} + b_{\text{hold}} I_{\text{hold}} - c_{\text{time}}
 $$
 
      It combines:
-     * **Progress Reward ($w_p = 1.5$):** Encourages moving towards target posture.
-     * **Hand Pose Error Penalty ($w_h = 2.0$):** $E_{\text{hand}}$ is the L2 norm of virtual fingers error.
-     * **Orientation Penalty ($w_o = 1.0$):** $E_{\text{orientation}}$ is the L2 norm of wrist joint error.
-     * **Action Magnitude Penalty ($w_a = 0.05$):** Penalizes large action increments.
-     * **Action Smoothness Penalty ($w_s = 0.05$):** Penalizes change in actions to prevent jittering.
-     * **Joint Limit Penalty ($w_j = 0.2$):** Penalizes approaching joint physical limits.
-     * **Velocity Penalty ($w_v = 0.01$):** Reduces high joint velocities.
-     * **Hold Bonus ($b_{\text{hold}} = 0.5$):** Awarded if errors are within tolerance.
-     * **Success Bonus ($b_{\text{success}} = 10.0$):** Awarded upon meeting the hold streak requirement.
-     * **Time Penalty ($c_{\text{time}} = 0.1$):** Encourages fast convergence.
+     * **Progress Reward (<i>w</i><sub>p</sub> = 1.5):** Encourages moving towards target posture.
+     * **Hand Pose Error Penalty (<i>w</i><sub>h</sub> = 2.0):** <i>E</i><sub>hand</sub> is the L2 norm of virtual fingers error.
+     * **Orientation Penalty (<i>w</i><sub>o</sub> = 1.0):** <i>E</i><sub>orientation</sub> is the L2 norm of wrist joint error.
+     * **Action Magnitude Penalty (<i>w</i><sub>a</sub> = 0.05):** Penalizes large action increments.
+     * **Action Smoothness Penalty (<i>w</i><sub>s</sub> = 0.05):** Penalizes change in actions to prevent jittering.
+     * **Joint Limit Penalty (<i>w</i><sub>j</sub> = 0.2):** Penalizes approaching joint physical limits.
+     * **Velocity Penalty (<i>w</i><sub>v</sub> = 0.01):** Reduces high joint velocities.
+     * **Hold Bonus (<i>b</i><sub>hold</sub> = 0.5):** Awarded if errors are within tolerance.
+     * **Success Bonus (<i>b</i><sub>success</sub> = 10.0):** Awarded upon meeting the hold streak requirement.
+     * **Time Penalty (<i>c</i><sub>time</sub> = 0.1):** Encourages fast convergence.
    * **Success Conditions:** Success is declared when hand pose and orientation errors remain within tolerance (`pose_tolerance = 0.06`, `orient_tolerance = 0.12`) for at least 15 consecutive steps.
 
 2. **Actor-Critic Network (`actor_critic_network.py`):**
